@@ -1,0 +1,47 @@
+name: gongsu_app
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  intl: ^0.20.2
+  shared_preferences: ^2.5.5
+  flutter_localizations:
+    sdk: flutter
+  http: ^1.6.0
+  
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: "^0.13.1"
+  flutter_native_splash: ^2.4.7
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/app_logo.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/app_logo.png"
+
+flutter_native_splash:
+  color: "#ffffff"
+  image: "assets/splash_logo.png"
+  android_12:
+    image: "assets/splash_logo.png"
+    color: "#ffffff"
+  fullscreen: true
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/app_logo.png
+    - assets/splash_logo.png

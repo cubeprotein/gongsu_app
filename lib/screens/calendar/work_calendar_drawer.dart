@@ -1,0 +1,236 @@
+import 'package:flutter/material.dart';
+import '../../models/user_model.dart';
+import '../../services/profile_service.dart';
+import '../profile/my_page.dart';
+import '../../main.dart'; 
+import '../calendar/year_statistics_page.dart'; // [추가] 연간 통계 페이지 임포트
+
+class WorkCalendarDrawer extends StatelessWidget {
+  final UserModel? user;
+  final VoidCallback onProfileUpdate;
+
+  const WorkCalendarDrawer({
+    super.key,
+    required this.user,
+    required this.onProfileUpdate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: MediaQuery.of(context).size.width * 0.75,
+      child: Drawer(
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.only(
+            topRight: Radius.circular(20),
+            bottomRight: Radius.circular(20),
+          ),
+        ),
+        child: Column(
+          children: [
+            _buildUserHeader(context),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _buildMenuItem(
+                    icon: Icons.person_outline,
+                    title: "마이페이지",
+                    onTap: () async {
+                      Navigator.pop(context);
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const MyPage()),
+                      );
+                      if (result == true) onProfileUpdate();
+                    },
+                  ),
+                  // [추가] 연간 공수 통계 메뉴
+                  _buildMenuItem(
+                    icon: Icons.calendar_month_outlined,
+                    title: "연간 공수 통계",
+                    onTap: () {
+                      Navigator.pop(context); // 드로어 닫기
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => YearStatisticsPage(year: DateTime.now().year),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(), // 시각적 구분을 위한 선
+                  _buildMenuItem(
+                    icon: Icons.question_answer_outlined,
+                    title: "자주 묻는 질문",
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showFAQ(context);
+                    },
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.help_outline,
+                    title: "문의하기",
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showInquiry(context);
+                    },
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.info_outline,
+                    title: "앱 정보",
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showAppInfo(context);
+                    },
+                  ),
+                  const Divider(),
+                  _buildMenuItem(
+                    icon: Icons.logout,
+                    title: "로그아웃",
+                    color: Colors.redAccent,
+                    onTap: () async {
+                      await ProfileService.logout();
+                      if (!context.mounted) return;
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginPage()),
+                        (route) => false,
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- 사용자 헤더 ---
+  Widget _buildUserHeader(BuildContext context) {
+    final name = user?.name ?? "정보 없음";
+    final job = user?.jobTitle ?? "미설정";
+    final site = user?.siteName ?? "현장 미설정";
+    final role = user?.role ?? "업무 미설정";
+
+    return Container(
+      padding: const EdgeInsets.only(top: 50, left: 20, right: 10, bottom: 20),
+      decoration: const BoxDecoration(color: Color(0xFF1B263B)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "$name 님",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    job,
+                    style: const TextStyle(
+                      color: Colors.yellow,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white70),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          Text(
+            "$site | $role",
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- 공통 메뉴 아이템 ---
+  Widget _buildMenuItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: color ?? const Color(0xFF1B263B)),
+      title: Text(
+        title,
+        style: TextStyle(fontWeight: FontWeight.w500, color: color),
+      ),
+      onTap: onTap,
+    );
+  }
+
+  // --- 다이얼로그 로직들 (FAQ, 문의하기, 앱 정보 등) ---
+  void _showFAQ(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('자주 묻는 질문', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildFAQTile('데이터 저장 위치', '데이터는 핸드폰 내부에만 저장됩니다.'),
+                _buildFAQTile('앱 삭제 시 주의', '앱 삭제 시 저장된 모든 데이터가 사라지니 주의하세요.'),
+                _buildFAQTile('공수 계산 방식', '입력하신 (공수 x 단가)를 기준으로 월별 합계가 자동 계산됩니다.'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('닫기')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFAQTile(String q, String a) {
+    return ExpansionTile(
+      title: Text(q, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+      children: [Padding(padding: const EdgeInsets.all(15), child: Text(a, style: const TextStyle(fontSize: 13)))],
+    );
+  }
+
+  void _showInquiry(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('문의하기'),
+        content: const Text('불편한 점이나 개선 제안은 아래 이메일로 보내주세요.\n\n📧 cubeprotein@gmail.com'),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('확인'))],
+      ),
+    );
+  }
+
+  void _showAppInfo(BuildContext context) {
+    showAboutDialog(
+      context: context,
+      applicationName: '플랜트공수',
+      applicationVersion: '1.0.0',
+      applicationIcon: const Icon(Icons.engineering, size: 32, color: Color(0xFF1B263B)),
+      applicationLegalese: '© 2026 Master Craftsman Developer',
+      children: [const Text('\n오직 플랜트건설노동자만을 위한 공수 관리 앱입니다.\n\n-배관 7소대 화이팅-')],
+    );
+  }
+}
