@@ -1,32 +1,41 @@
-// lib/models/user_model.dart
 class UserModel {
+  String uid;
   String name;
+  String phoneNumber; // 추가
   String jobTitle;
   String siteName;
   String role;
+  int defaultDayPay;
 
   UserModel({
-    this.name = "홍길동",
-    this.jobTitle = "배관기능장",
-    this.siteName = "현장 미설정",
-    this.role = "담당 업무 미설정",
+    this.uid = "",
+    this.name = "",
+    this.phoneNumber = "",
+    this.jobTitle = "",
+    this.siteName = "",
+    this.role = "",
+    this.defaultDayPay = 0,
   });
 
-  // 저장용 (Map 변환)
   Map<String, dynamic> toMap() => {
+    'uid': uid,
     'name': name,
+    'phoneNumber': phoneNumber,
     'jobTitle': jobTitle,
     'siteName': siteName,
     'role': role,
+    'defaultDayPay': defaultDayPay,
   };
 
-  // 불러오기용 (Factory 생성자)
-  factory UserModel.fromMap(Map<String, dynamic> map) {
+  factory UserModel.fromMap(Map<String, dynamic> map, String docId) {
     return UserModel(
-      name: map['name'] ?? "홍길동",
-      jobTitle: map['jobTitle'] ?? "배관기능장",
-      siteName: map['siteName'] ?? "현장 미설정",
-      role: map['role'] ?? "담당 업무 미설정",
+      uid: docId,
+      name: map['name'] ?? "",
+      phoneNumber: map['phoneNumber'] ?? "",
+      jobTitle: map['jobTitle'] ?? "",
+      siteName: map['siteName'] ?? "",
+      role: map['role'] ?? "",
+      defaultDayPay: map['defaultDayPay'] ?? 0,
     );
   }
 }

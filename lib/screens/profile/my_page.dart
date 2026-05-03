@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../services/profile_service.dart';
-
-// --- 추가된 import (경로를 프로젝트 구조에 맞게 확인하세요) ---
-import '../calendar/work_calendar_page.dart';
+import '../calendar/work_calendar_page.dart'; // ✅ 이동할 목적지 주소만 추가했습니다.
 
 class MyPage extends StatefulWidget {
   const MyPage({super.key});
@@ -14,14 +12,16 @@ class MyPage extends StatefulWidget {
 
 class _MyPageState extends State<MyPage> {
   final _formKey = GlobalKey<FormState>();
-  
-  // 입력 제어를 위한 컨트롤러
+  final _profileService = ProfileService();
+
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _jobController = TextEditingController();
+  final TextEditingController _jobController = TextEditingController(); // 전화번호용
   final TextEditingController _siteController = TextEditingController();
   final TextEditingController _roleController = TextEditingController();
+  final TextEditingController _payController = TextEditingController();
 
   bool _isLoading = true;
+  String _currentUid = '';
 
   @override
   void initState() {
@@ -29,46 +29,65 @@ class _MyPageState extends State<MyPage> {
     _loadUserData();
   }
 
-  // 기존 저장된 프로필 불러오기
   Future<void> _loadUserData() async {
-    final user = await ProfileService.loadProfile();
-    setState(() {
-      _nameController.text = user.name;
-      _jobController.text = user.jobTitle;
-      _siteController.text = user.siteName;
-      _roleController.text = user.role;
-      _isLoading = false;
-    });
+    try {
+      final user = await _profileService.loadProfile();
+      if (!mounted) return;
+      setState(() {
+        _currentUid = user.uid;
+        _nameController.text = user.name;
+        _jobController.text = user.jobTitle;
+        _siteController.text = user.siteName;
+        _roleController.text = user.role;
+        _payController.text = user.defaultDayPay == 0
+            ? ""
+            : user.defaultDayPay.toString();
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
-  // --- [수정된 부분] 정보 저장 및 동선 제어 ---
   Future<void> _saveData() async {
     if (_formKey.currentState!.validate()) {
-      final updatedUser = UserModel(
-        name: _nameController.text,
-        jobTitle: _jobController.text,
-        siteName: _siteController.text,
-        role: _roleController.text,
-      );
+      setState(() => _isLoading = true);
 
-      await ProfileService.saveProfile(updatedUser);
-      
-      if (!mounted) return;
+      try {
+        final currentUser = await _profileService.loadProfile();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('프로필 정보가 저장되었습니다.')),
-      );
+        final updatedUser = UserModel(
+          uid: _currentUid,
+          name: _nameController.text.trim(),
+          jobTitle: _jobController.text.trim(), // 전화번호
+          siteName: _siteController.text.trim(),
+          role: _roleController.text.trim(), // 분회(직종)
+          defaultDayPay: currentUser.defaultDayPay,
+        );
 
-      // ✅ 검은 화면 방어 로직:
-      // 뒤로 갈 곳(달력 화면)이 있다면 pop하고, 
-      // 처음 가입/로그인 직후라 뒤로 갈 곳이 없다면 달력 화면으로 이동합니다.
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context, true); // 사이드바에서 온 경우
-      } else {
-        Navigator.pushReplacement(
+        await _profileService.saveProfile(updatedUser);
+
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('프로필 정보가 저장되었습니다.')));
+
+        // ✅ 딱 이 부분만 수정했습니다: pop 대신 달력 페이지로 이동
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const WorkCalendarPage()),
-        ); // 로그인 후 처음 온 경우
+          (route) => false,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('저장 실패: $e')));
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
       }
     }
   }
@@ -82,30 +101,35 @@ class _MyPageState extends State<MyPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text("마이페이지", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF1B263B), // 정시 색상(네이비)
+        title: const Text(
+          "마이페이지",
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: const Color(0xFF1B263B),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        // 뒤로가기 버튼 자동 생성 방지 (처음 설정 시)
-        automaticallyImplyLeading: Navigator.canPop(context),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text("내 정보 수정", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 20),
-              
-              _buildInputField("성함", _nameController, "이름을 입력하세요"),
-              _buildInputField("직종", _jobController, "예: 배관기능장, 용접사 등"),
-              _buildInputField("현장명", _siteController, "현재 투입 중인 현장명"),
-              _buildInputField("담당 업무", _roleController, "예: MD 담당, Spoolman 등"),
-              
+              _buildInputField("성함", _nameController, "홍길동"),
+              _buildInputField("분회(직종)", _roleController, "배관, 용접 등"),
+              _buildInputField(
+                "전화번호",
+                _jobController,
+                "010-1234-5678",
+                inputType: TextInputType.phone,
+              ),
+              _buildInputField(
+                "현장(선택)",
+                _siteController,
+                "현재 현장명",
+                isRequired: false,
+              ),
               const SizedBox(height: 30),
-              
               SizedBox(
                 width: double.infinity,
                 height: 55,
@@ -113,9 +137,18 @@ class _MyPageState extends State<MyPage> {
                   onPressed: _saveData,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1B263B),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text("저장하기", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    "저장하기",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -125,24 +158,44 @@ class _MyPageState extends State<MyPage> {
     );
   }
 
-  Widget _buildInputField(String label, TextEditingController controller, String hint) {
+  Widget _buildInputField(
+    String label,
+    TextEditingController controller,
+    String hint, {
+    bool isRequired = true,
+    TextInputType? inputType,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black54)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 8),
           TextFormField(
             controller: controller,
+            keyboardType: inputType,
             decoration: InputDecoration(
               hintText: hint,
+              hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
               filled: true,
               fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 15,
+                vertical: 15,
+              ),
             ),
-            validator: (value) => (value == null || value.isEmpty) ? "$label을 입력해주세요" : null,
+            validator: (value) =>
+                isRequired && (value == null || value.trim().isEmpty)
+                ? "$label을 입력해주세요"
+                : null,
           ),
         ],
       ),

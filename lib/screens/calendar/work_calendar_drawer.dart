@@ -2,17 +2,24 @@ import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../services/profile_service.dart';
 import '../profile/my_page.dart';
-import '../../main.dart'; 
-import '../calendar/year_statistics_page.dart'; // [추가] 연간 통계 페이지 임포트
+import '../login/login_page.dart';
+import '../calendar/year_statistics_page.dart';
+import '../tax/tax_statement_page.dart';
 
 class WorkCalendarDrawer extends StatelessWidget {
   final UserModel? user;
   final VoidCallback onProfileUpdate;
+  final double totalGongsu;
+  final int totalPreTax;
+  final DateTime focusedMonth;
 
   const WorkCalendarDrawer({
     super.key,
     required this.user,
     required this.onProfileUpdate,
+    required this.totalGongsu,
+    required this.totalPreTax,
+    required this.focusedMonth,
   });
 
   @override
@@ -37,29 +44,50 @@ class WorkCalendarDrawer extends StatelessWidget {
                     icon: Icons.person_outline,
                     title: "마이페이지",
                     onTap: () async {
-                      Navigator.pop(context);
                       final result = await Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const MyPage()),
+                        MaterialPageRoute(builder: (context) => const MyPage()),
                       );
-                      if (result == true) onProfileUpdate();
+                      if (result == true) {
+                        onProfileUpdate();
+                      }
                     },
                   ),
-                  // [추가] 연간 공수 통계 메뉴
                   _buildMenuItem(
-                    icon: Icons.calendar_month_outlined,
-                    title: "연간 공수 통계",
+                    icon: Icons.calculate_outlined,
+                    title: "세금 내역서",
+                    color: Colors.black,
                     onTap: () {
-                      Navigator.pop(context); // 드로어 닫기
+                      Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => YearStatisticsPage(year: DateTime.now().year),
+                          builder: (context) => TaxStatementPage(
+                            selectedMonth: focusedMonth,
+                            totalGongsu: totalGongsu,
+                            totalPreTax: totalPreTax,
+                            user: user,
+                          ),
                         ),
                       );
                     },
                   ),
-                  const Divider(), // 시각적 구분을 위한 선
+                  _buildMenuItem(
+                    icon: Icons.calendar_month_outlined,
+                    title: "연간 공수 통계",
+                    color: const Color.fromARGB(255, 236, 51, 9),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              YearStatisticsPage(year: DateTime.now().year),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(),
                   _buildMenuItem(
                     icon: Icons.question_answer_outlined,
                     title: "자주 묻는 질문",
@@ -88,13 +116,13 @@ class WorkCalendarDrawer extends StatelessWidget {
                   _buildMenuItem(
                     icon: Icons.logout,
                     title: "로그아웃",
-                    color: Colors.redAccent,
+                    color: const Color.fromARGB(255, 0, 0, 0),
                     onTap: () async {
-                      await ProfileService.logout();
+                      await ProfileService().logout();
                       if (!context.mounted) return;
                       Navigator.pushAndRemoveUntil(
                         context,
-                        MaterialPageRoute(builder: (_) => const LoginPage()),
+                        MaterialPageRoute(builder: (_) => LoginPage()),
                         (route) => false,
                       );
                     },
@@ -108,7 +136,6 @@ class WorkCalendarDrawer extends StatelessWidget {
     );
   }
 
-  // --- 사용자 헤더 ---
   Widget _buildUserHeader(BuildContext context) {
     final name = user?.name ?? "정보 없음";
     final job = user?.jobTitle ?? "미설정";
@@ -162,7 +189,6 @@ class WorkCalendarDrawer extends StatelessWidget {
     );
   }
 
-  // --- 공통 메뉴 아이템 ---
   Widget _buildMenuItem({
     required IconData icon,
     required String title,
@@ -179,27 +205,41 @@ class WorkCalendarDrawer extends StatelessWidget {
     );
   }
 
-  // --- 다이얼로그 로직들 (FAQ, 문의하기, 앱 정보 등) ---
   void _showFAQ(BuildContext context) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('자주 묻는 질문', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          '자주 묻는 질문',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: SizedBox(
           width: double.maxFinite,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildFAQTile('데이터 저장 위치', '데이터는 핸드폰 내부에만 저장됩니다.'),
-                _buildFAQTile('앱 삭제 시 주의', '앱 삭제 시 저장된 모든 데이터가 사라지니 주의하세요.'),
-                _buildFAQTile('공수 계산 방식', '입력하신 (공수 x 단가)를 기준으로 월별 합계가 자동 계산됩니다.'),
+                _buildFAQTile(
+                  '데이터 저장 및 동기화',
+                  '입력하신 공수 데이터는 클라우드에 안전하게 저장되어 기기를 변경해도 유지됩니다.',
+                ),
+                _buildFAQTile(
+                  '앱 삭제 시 데이터',
+                  '로그인 기반 서비스로 앱을 삭제해도 데이터는 사라지지 않습니다. 재설치 후 로그인하시면 복구됩니다.',
+                ),
+                _buildFAQTile(
+                  '공수 계산 방식',
+                  '입력하신 (공수 x 단가)에 설정하신 주차/월차/능률 수당을 더하여 계산됩니다.',
+                ),
               ],
             ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('닫기')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -207,8 +247,16 @@ class WorkCalendarDrawer extends StatelessWidget {
 
   Widget _buildFAQTile(String q, String a) {
     return ExpansionTile(
-      title: Text(q, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-      children: [Padding(padding: const EdgeInsets.all(15), child: Text(a, style: const TextStyle(fontSize: 13)))],
+      title: Text(
+        q,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(15),
+          child: Text(a, style: const TextStyle(fontSize: 13)),
+        ),
+      ],
     );
   }
 
@@ -217,8 +265,15 @@ class WorkCalendarDrawer extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('문의하기'),
-        content: const Text('불편한 점이나 개선 제안은 아래 이메일로 보내주세요.\n\n📧 cubeprotein@gmail.com'),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('확인'))],
+        content: const Text(
+          '불편한 점이나 개선 제안은 아래 이메일로 보내주세요.\n\n📧 cubeprotein@gmail.com',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('확인'),
+          ),
+        ],
       ),
     );
   }
@@ -228,9 +283,17 @@ class WorkCalendarDrawer extends StatelessWidget {
       context: context,
       applicationName: '플랜트공수',
       applicationVersion: '1.0.0',
-      applicationIcon: const Icon(Icons.engineering, size: 32, color: Color(0xFF1B263B)),
+      applicationIcon: const Icon(
+        Icons.engineering,
+        size: 32,
+        color: Color(0xFF1B263B),
+      ),
       applicationLegalese: '© 2026 Master Craftsman Developer',
-      children: [const Text('\n오직 플랜트건설노동자만을 위한 공수 관리 앱입니다.\n\n-배관 7소대 화이팅-')],
+      children: [
+        const Text(
+          '\n오직 플랜트건설노동자만을 위한 공수 관리 앱입니다.\n실시간 클라우드 동기화를 지원합니다.\n\n-배관 7소대 화이팅-',
+        ),
+      ],
     );
   }
 }

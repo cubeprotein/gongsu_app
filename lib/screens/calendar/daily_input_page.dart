@@ -4,23 +4,14 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ----------------------------
-// 전역 팔레트 색상 상수 정의
+// 전역 팔레트 및 상수
 // ----------------------------
 const Color kSystemBarColor = Color(0xFF1E2A45);
 const Color kAppBarColor = Color(0xFF3C486B);
 const Color kBodyBackground = Color(0xFFF0F0F0);
 const Color kSaveButtonColor = Color(0xFFF9D949);
 const Color kDeleteButtonColor = Color(0xFFF45050);
-const Color kLeaveActiveColor = Color(0xFF2D6A4F); // 휴무 활성 색상 (회색)
-
-void setCustomSystemBar() {
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: kSystemBarColor,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
-}
+const Color kLeaveActiveColor = Color(0xFF2D6A4F);
 
 class DailyInputPage extends StatefulWidget {
   final DateTime selectedDate;
@@ -42,39 +33,59 @@ class _DailyInputPageState extends State<DailyInputPage> {
   final _siteNameCtrl = TextEditingController();
   final _memoCtrl = TextEditingController();
 
-  bool _isLeave = false; // ✅ 휴무 여부 상태 추가
-
+  bool _isLeave = false;
+  bool _isPaidLeave = false; // ✅ 유급 휴무 상태 변수 추가
   static const _weekdayKo = ['월', '화', '수', '목', '금', '토', '일'];
 
   @override
   void initState() {
     super.initState();
-    setCustomSystemBar();
     final d = widget.initialData ?? {};
-    _workDayCtrl.text = (d['workDay']?.toString() ?? '1.0');
-    _dayPayCtrl.text = (d['dayPay'] ?? d['unitPrice'])?.toString() ?? '';
+
+    // 공수 설정
+    _workDayCtrl.text = d['workDay']?.toString() ?? '1.0';
+
+    // ✅ 리스크 방지: 기존 데이터 로드시에도 단가에 콤마 포맷팅 적용
+    final initialPayRaw = (d['dayPay'] ?? d['unitPrice']);
+    if (initialPayRaw != null) {
+      final parsed = int.tryParse(initialPayRaw.toString()) ?? 0;
+      _dayPayCtrl.text = NumberFormat('#,###').format(parsed);
+    } else {
+      _dayPayCtrl.text = '';
+    }
+
     _siteNameCtrl.text = d['siteName']?.toString() ?? '';
     _memoCtrl.text = d['memo']?.toString() ?? '';
 
-    // 초기 데이터에 휴무 정보가 있다면 반영 (int 1이면 true로 가정)
-    _isLeave = d['leave'] == 1;
+    // ✅ 휴무 및 유급 상태 초기화
+    _isPaidLeave = d['isPaidLeave'] ?? false;
+    _isLeave = (d['leave'] == 1) && !_isPaidLeave;
 
-    _loadLastInputs();
+    if (widget.initialData == null) {
+      _loadLastInputs();
+    }
   }
 
+  // ✅ [기능] 최근 입력값 불러오기 (SiteName, DayPay)
   Future<void> _loadLastInputs() async {
     final prefs = await SharedPreferences.getInstance();
-    final lastSite = prefs.getString('lastSiteName');
-    final lastPay = prefs.getString('lastDayPay');
-    if (lastSite != null && lastSite.isNotEmpty && _siteNameCtrl.text.isEmpty) {
-      _siteNameCtrl.text = lastSite;
-    }
-    if (lastPay != null && lastPay.isNotEmpty && _dayPayCtrl.text.isEmpty) {
-      final formatted = NumberFormat('#,###').format(int.parse(lastPay));
-      _dayPayCtrl.text = formatted;
-    }
+    setState(() {
+      final lastSite = prefs.getString('lastSiteName');
+      final lastPay = prefs.getString('lastDayPay');
+      if (lastSite != null && _siteNameCtrl.text.isEmpty) {
+        _siteNameCtrl.text = lastSite;
+      }
+      if (lastPay != null && _dayPayCtrl.text.isEmpty) {
+        // ✅ 리스크 방지: tryParse를 사용하여 비정상 데이터로 인한 크래시 방지
+        final parsedPay = int.tryParse(lastPay);
+        if (parsedPay != null) {
+          _dayPayCtrl.text = NumberFormat('#,###').format(parsedPay);
+        }
+      }
+    });
   }
 
+  // ✅ [기능] 입력값 저장
   Future<void> _saveLastInputs() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('lastSiteName', _siteNameCtrl.text.trim());
@@ -91,8 +102,7 @@ class _DailyInputPageState extends State<DailyInputPage> {
   }
 
   double _parseWorkDay(String s) {
-    final v = double.tryParse(s.trim()) ?? 0.0;
-    return v.clamp(0.0, 10.0);
+    return double.tryParse(s.trim()) ?? 0.0;
   }
 
   int _parseInt(String s) {
@@ -100,52 +110,52 @@ class _DailyInputPageState extends State<DailyInputPage> {
     return int.tryParse(t) ?? 0;
   }
 
-  bool _validate() {
-    // 휴무일 때는 공수가 0이어도 저장 가능하도록 예외 처리 가능
-    if (_isLeave) return true;
+  void _stepWorkDay(double delta) {
+    setState(() {
+      if (_isLeave) _isLeave = false;
+      if (_isPaidLeave) _isPaidLeave = false; // ✅ 유급 상태도 해제
 
-    final workDay = _parseWorkDay(_workDayCtrl.text);
-    final dayPay = _parseInt(_dayPayCtrl.text);
-    final site = _siteNameCtrl.text.trim();
-    return workDay > 0 && dayPay > 0 && site.isNotEmpty;
-  }
-
-  void _save() async {
-    if (!_validate()) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('공수·단가·현장명을 정확히 입력하세요')));
-      return;
-    }
-    if (!_isLeave) {
-      await _saveLastInputs();
-    }
-
-    Navigator.pop<Map<String, dynamic>>(context, {
-      'workDay': _isLeave ? 0.0 : _parseWorkDay(_workDayCtrl.text),
-      'dayPay': _parseInt(_dayPayCtrl.text),
-      'siteName': _siteNameCtrl.text.trim(),
-      'memo': _memoCtrl.text.trim(),
-      'adjustment': 0.0,
-      'leave': _isLeave ? 1 : 0, // ✅ 휴무 여부 1/0으로 전달
+      double cur = _parseWorkDay(_workDayCtrl.text);
+      double next = (cur + delta).clamp(0.0, 20.0);
+      _workDayCtrl.text = next == next.toInt()
+          ? next.toInt().toString()
+          : next.toString();
     });
   }
 
-  void _stepWorkDay(double delta) {
-    setState(() {
-      if (_isLeave) _isLeave = false; // ✅ 증감 버튼 클릭 시 휴무 해제
-      final cur = _parseWorkDay(_workDayCtrl.text);
-      final next = (cur + delta).clamp(0.0, 10.0);
-      _workDayCtrl.text = next.toStringAsFixed(1);
+  void _save() async {
+    final workDay = _parseWorkDay(_workDayCtrl.text);
+    final dayPay = _parseInt(_dayPayCtrl.text);
+    final site = _siteNameCtrl.text.trim();
+
+    // ✅ 휴무나 유급휴무가 아닐 때 필수값 체크
+    if (!_isLeave &&
+        !_isPaidLeave &&
+        (workDay <= 0 || dayPay <= 0 || site.isEmpty)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('현장명, 단가, 공수를 확인해주세요.')));
+      return;
+    }
+
+    await _saveLastInputs();
+
+    Navigator.pop<Map<String, dynamic>>(context, {
+      'workDay': (_isLeave || _isPaidLeave)
+          ? 0.0
+          : workDay, // ✅ 둘 다 실제 공수는 0.0 저장
+      'dayPay': dayPay,
+      'siteName': site,
+      'memo': _memoCtrl.text.trim(),
+      'leave': _isLeave ? 1 : 0, // ✅ 휴무 여부 플래그
+      'isPaidLeave': _isPaidLeave, // ✅ 유급 여부 데이터 추가
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final y = widget.selectedDate.year.toString().padLeft(4, '0');
-    final m = widget.selectedDate.month.toString().padLeft(2, '0');
-    final d = widget.selectedDate.day.toString().padLeft(2, '0');
-    final dateStr = "$y-$m-$d";
+    final isSunday = widget.selectedDate.weekday == DateTime.sunday;
+    final dateStr = DateFormat('yyyy-MM-dd').format(widget.selectedDate);
     final dow = _weekdayKo[widget.selectedDate.weekday - 1];
 
     return Scaffold(
@@ -153,57 +163,34 @@ class _DailyInputPageState extends State<DailyInputPage> {
       appBar: AppBar(
         backgroundColor: kAppBarColor,
         foregroundColor: Colors.white,
-        title: const Text("공수입력"),
+        title: const Text("공수 입력"),
+        elevation: 0,
         actions: [
           if (widget.initialData != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: TextButton(
-                style: TextButton.styleFrom(
-                  backgroundColor: kDeleteButtonColor,
-                  foregroundColor: Colors.white,
-                  shape: const StadiumBorder(),
-                ),
-                onPressed: () async {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text('삭제'),
-                      content: const Text('해당 날짜의 공수를 삭제할까요?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('취소'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('삭제'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (ok == true) Navigator.pop(context, {'__delete__': true});
-                },
-                child: const Text('삭제'),
-              ),
+            IconButton(
+              icon: const Icon(Icons.delete_forever, color: Colors.white),
+              onPressed: () async {
+                final ok = await _showDeleteDialog();
+                if (ok == true) Navigator.pop(context, {'__delete__': true});
+              },
             ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ✅ 날짜와 휴무 체크박스 라인
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 '$dateStr ($dow)',
-                style: const TextStyle(
-                  fontSize: 16,
+                style: TextStyle(
+                  fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: kAppBarColor,
+                  color: isSunday ? Colors.red : kAppBarColor,
                 ),
               ),
+              // ✅ 휴무 및 유급 체크박스 행 구성
               Row(
                 children: [
                   const Text(
@@ -212,12 +199,31 @@ class _DailyInputPageState extends State<DailyInputPage> {
                   ),
                   Checkbox(
                     value: _isLeave,
-                    activeColor: kDeleteButtonColor, // 체크 시 빨간색 계열
+                    activeColor: kDeleteButtonColor,
                     onChanged: (val) {
                       setState(() {
                         _isLeave = val ?? false;
                         if (_isLeave) {
-                          _workDayCtrl.text = "0.0"; // 휴무 체크 시 공수 0.0
+                          _workDayCtrl.text = "0.0";
+                          _isPaidLeave = false; // 상호 배타적
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 1),
+                  const Text(
+                    '유급',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Checkbox(
+                    value: _isPaidLeave,
+                    activeColor: Colors.orange,
+                    onChanged: (val) {
+                      setState(() {
+                        _isPaidLeave = val ?? false;
+                        if (_isPaidLeave) {
+                          _workDayCtrl.text = "0.0";
+                          _isLeave = false; // 상호 배타적
                         }
                       });
                     },
@@ -226,182 +232,136 @@ class _DailyInputPageState extends State<DailyInputPage> {
               ),
             ],
           ),
-          const SizedBox(height: 1),
+          const SizedBox(height: 16),
 
-          const Text('현장', style: TextStyle(fontSize: 16, color: Colors.black)),
-          const SizedBox(height: 6),
+          _buildLabel('현장명'),
           TextField(
             controller: _siteNameCtrl,
-            decoration: InputDecoration(
-              isDense: true, // 1. 세로폭 압축
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ), // 2. 내부 여백 조절
-              hintText: "예) 현장 이름",
-              hintStyle: TextStyle(color: Colors.grey.shade400),
-              border: const OutlineInputBorder(
-                borderSide: BorderSide(color: kAppBarColor),
-              ),
-              focusedBorder: const OutlineInputBorder(
-                borderSide: BorderSide(color: kAppBarColor, width: 2),
-              ),
-            ),
+            decoration: _inputDecoration("예: S-oil, GS칼텍스 등"),
           ),
+          const SizedBox(height: 16),
 
-          const SizedBox(height: 10),
-          const Text(
-            '공수 단가',
-            style: TextStyle(fontSize: 16, color: Colors.black),
-          ),
-          const SizedBox(height: 5),
+          _buildLabel('공수 단가 (원)'),
           TextField(
             controller: _dayPayCtrl,
-            textAlign: TextAlign.left,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             onChanged: (raw) {
               if (raw.isEmpty) return;
-              final digitsOnly = raw.replaceAll(',', '');
               final formatted = NumberFormat(
                 '#,###',
-              ).format(int.parse(digitsOnly));
+              ).format(int.parse(raw.replaceAll(',', '')));
               _dayPayCtrl.value = TextEditingValue(
                 text: formatted,
                 selection: TextSelection.collapsed(offset: formatted.length),
               );
             },
-            decoration: InputDecoration(
-              isDense: true, // ✅ 추가
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ), // ✅ 추가
-              hintText: "금액을 입력하세요",
-              hintStyle: TextStyle(color: Colors.grey.shade400),
-              suffix: Padding(
-                padding: const EdgeInsets.only(
-                  right: 10,
-                ), // ✅ 우측 벽에서 15만큼 안쪽으로 밀어넣음
-                child: const Text(
-                  "원",
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14, // 숫자 크기에 맞춰 약간 키우면 더 보기 좋습니다.
-                  ),
-                ),
-              ),
-              border: const OutlineInputBorder(
-                borderSide: BorderSide(color: kAppBarColor),
-              ),
-              focusedBorder: const OutlineInputBorder(
-                borderSide: BorderSide(color: kAppBarColor, width: 2),
-              ),
-            ),
+            decoration: _inputDecoration("단가를 입력하세요"),
           ),
+          const SizedBox(height: 20),
 
-          const SizedBox(height: 18),
-          // ✅ 공수 증감 영역 (휴무 상태 시 UI 변경)
           Row(
             children: [
-              _pillButton(icon: Icons.remove, onTap: () => _stepWorkDay(-0.5)),
-              const SizedBox(width: 8),
+              // 1. 마이너스 버튼
+              _stepButton(Icons.remove, () => _stepWorkDay(-0.5)),
+
               Expanded(
                 child: Container(
-                  height: 44,
+                  height: 50,
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: _isLeave
-                        ? kLeaveActiveColor
-                        : const Color.fromARGB(255, 247, 185, 1),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: const Color.fromARGB(255, 189, 189, 189),
-                    ),
+                    // ✅ 휴무 또는 유급일 때 색상 변경
+                    color: _isPaidLeave
+                        ? Colors.orange
+                        : (_isLeave
+                              ? kLeaveActiveColor
+                              : const Color.fromARGB(255, 250, 208, 19)),
+                    borderRadius: BorderRadius.circular(25),
                   ),
-                  child: Text(
-                    _isLeave
-                        ? '휴무'
-                        : (_workDayCtrl.text.isEmpty
-                              ? '0.0'
-                              : _parseWorkDay(
-                                  _workDayCtrl.text,
-                                ).toStringAsFixed(1)),
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: _isLeave ? Colors.white : Colors.black,
-                    ),
-                  ),
+                  // ✅ 휴무/유급 시 텍스트 표시 분기
+                  child: (_isLeave || _isPaidLeave)
+                      ? Text(
+                          _isPaidLeave ? "유급" : "휴무",
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        )
+                      : TextField(
+                          controller: _workDayCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          textAlign: TextAlign.center, // 텍스트 중앙 정렬
+                          cursorColor: Colors.black, // 커서 색상
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
                 ),
               ),
-              const SizedBox(width: 8),
-              _pillButton(icon: Icons.add, onTap: () => _stepWorkDay(0.5)),
+
+              // 2. 플러스 버튼
+              _stepButton(Icons.add, () => _stepWorkDay(0.5)),
             ],
           ),
+          const SizedBox(height: 16),
 
-          const SizedBox(height: 10),
-          const Text(
-            '공수 직접 입력',
-            style: TextStyle(fontSize: 15, color: Colors.black),
-          ),
-          const SizedBox(height: 6),
+          _buildLabel('공수 직접 입력 (소수점 가능)'),
           TextField(
             controller: _workDayCtrl,
-            textAlign: TextAlign.center,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              hintText: "0.45 , 1.7 같은 (소수점도 입력 가능)",
-              hintStyle: TextStyle(color: Colors.grey.shade400),
-              border: const OutlineInputBorder(
-                borderSide: BorderSide(color: kAppBarColor),
-              ),
-              focusedBorder: const OutlineInputBorder(
-                borderSide: BorderSide(color: kAppBarColor, width: 2),
-              ),
-              isDense: true,
-            ),
+            textAlign: TextAlign.center,
+            decoration: _inputDecoration("0.45, 1.2 등"),
             onChanged: (val) {
-              setState(() {
-                if (_parseWorkDay(val) > 0) _isLeave = false;
-              });
+              if (_parseWorkDay(val) > 0) {
+                setState(() {
+                  _isLeave = false;
+                  _isPaidLeave = false; // ✅ 수동 입력시 둘 다 해제
+                });
+              }
             },
           ),
+          const SizedBox(height: 16),
 
-          const SizedBox(height: 10),
-          const Text(
-            '메모 (선택)',
-            style: TextStyle(fontSize: 16, color: Colors.black),
-          ),
-          const SizedBox(height: 6),
+          _buildLabel('메모 (선택)'),
           TextField(
             controller: _memoCtrl,
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText: "오늘 하루는.....",
-              hintStyle: TextStyle(color: Colors.grey.shade400),
-              border: const OutlineInputBorder(
-                borderSide: BorderSide(color: kAppBarColor),
-              ),
-              focusedBorder: const OutlineInputBorder(
-                borderSide: BorderSide(color: kAppBarColor, width: 2),
-              ),
-            ),
+            maxLines: 2,
+            decoration: _inputDecoration("특이사항 입력"),
           ),
+          const SizedBox(height: 24),
 
-          const SizedBox(height: 18),
           SizedBox(
-            width: double.infinity,
+            height: 55,
             child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: kSaveButtonColor,
-                foregroundColor: Colors.black,
-              ),
               onPressed: _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color.fromARGB(
+                  255,
+                  255,
+                  224,
+                  85,
+                ), // 기존 색상 유지
+                foregroundColor: const Color.fromARGB(
+                  255,
+                  0,
+                  0,
+                  0,
+                ), // 기존 글자색 유지
+                shape: const StadiumBorder(),
+              ),
               child: const Text(
-                '저장',
+                "저장하기",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
@@ -411,19 +371,80 @@ class _DailyInputPageState extends State<DailyInputPage> {
     );
   }
 
-  Widget _pillButton({required IconData icon, required VoidCallback onTap}) {
-    return SizedBox(
-      width: 56,
-      height: 44,
-      child: TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          shape: const StadiumBorder(),
-          side: BorderSide(color: Colors.grey.shade400),
-          backgroundColor: Colors.white,
+  Widget _buildLabel(String label) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      label,
+      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+    ),
+  );
+
+  InputDecoration _inputDecoration(String hint) => InputDecoration(
+    hintText: hint,
+    hintStyle: const TextStyle(
+      color: Color.fromARGB(189, 189, 189, 189),
+      fontSize: 14,
+    ),
+    filled: true,
+    fillColor: Colors.white,
+    isDense: true,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: BorderSide.none,
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: kAppBarColor, width: 1.5),
+    ),
+  );
+
+  Widget _stepButton(IconData icon, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(25), // 터치 시 퍼지는 효과도 타원형으로
+      child: Container(
+        width: 60, // 버튼 가로 크기
+        height: 50, // 버튼 세로 크기 (중앙 입력창 높이와 일치)
+        decoration: BoxDecoration(
+          color: Colors.white, // 바탕색은 흰색
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(
+            color: Colors.grey.shade300, // 이미지처럼 연한 회색 테두리
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Icon(icon, color: Colors.black),
+        child: Icon(
+          icon,
+          color: Colors.black, // 아이콘 색상
+          size: 24, // 아이콘 크기
+        ),
       ),
     );
   }
+
+  Future<bool?> _showDeleteDialog() => showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text("삭제"),
+      content: const Text("정말 삭제하시겠습니까?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text("취소"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text("삭제", style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
 }

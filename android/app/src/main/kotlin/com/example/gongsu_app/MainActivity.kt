@@ -1,4 +1,4 @@
-package com.example.gongsu_app
+package com.gongsu.plant
 
 import io.flutter.embedding.android.FlutterActivity
 

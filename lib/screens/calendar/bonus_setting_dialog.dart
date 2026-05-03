@@ -31,6 +31,7 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
   @override
   void initState() {
     super.initState();
+    // ✅ Firestore에서 넘어온 초기값으로만 설정 (SharedPreferences 삭제)
     _basePayCtrl = TextEditingController(
       text: widget.initialBasePay == 0
           ? ''
@@ -39,12 +40,12 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
     _weeklyCtrl = TextEditingController(
       text: widget.initialWeeklyDays == 0.0
           ? ''
-          : widget.initialWeeklyDays.toStringAsFixed(2),
+          : widget.initialWeeklyDays.toString(),
     );
     _monthlyCtrl = TextEditingController(
       text: widget.initialMonthlyDays == 0.0
           ? ''
-          : widget.initialMonthlyDays.toStringAsFixed(2),
+          : widget.initialMonthlyDays.toString(),
     );
     _efficiencyCtrl = TextEditingController(
       text: widget.initialEfficiency == 0
@@ -74,8 +75,9 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
       backgroundColor: Colors.white,
       insetPadding: const EdgeInsets.all(16),
       child: SingleChildScrollView(
-        // ✅ 오버플로우 방지
-        padding: MediaQuery.of(context).viewInsets,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -91,9 +93,7 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
             _buildRow(
               label: "기준 단가",
               controller: _basePayCtrl,
-              hint: widget.initialBasePay == 0
-                  ? "금액"
-                  : "${_formatWithComma(widget.initialBasePay)} 원", // ✅ 이전 금액 힌트로 표시
+              hint: "금액",
               unit: "원",
               inputType: TextInputType.number,
               formatters: [ThousandsSeparatorInputFormatter()],
@@ -105,7 +105,7 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
               unit: "개",
               inputType: const TextInputType.numberWithOptions(decimal: true),
               formatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,0}')),
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
               ],
             ),
             _buildRow(
@@ -115,42 +115,36 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
               unit: "개",
               inputType: const TextInputType.numberWithOptions(decimal: true),
               formatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
               ],
             ),
             _buildRow(
               label: "능률(보건)",
               controller: _efficiencyCtrl,
-              hint: "2",
+              hint: "1",
               unit: "개",
               inputType: TextInputType.number,
-              formatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(2),
-              ],
+              formatters: [FilteringTextInputFormatter.digitsOnly],
             ),
             _buildRow(
               label: "소득세율",
               controller: _taxRateCtrl,
-              hint: "3.3",
+              hint: "직접입력  예) 3.3",
               unit: "%",
               inputType: const TextInputType.numberWithOptions(decimal: true),
             ),
             const SizedBox(height: 16),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.grey, // 취소는 눈에 덜 띄게 회색 처리
-                  ),
-                  child: const Text("취소"),
+                  child: const Text("취소", style: TextStyle(color: Colors.grey)),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () {
+                    // ✅ 저장 버튼 클릭 시 결과만 반환 (저장 처리는 부모 위젯에서 Firestore로 수행)
                     Navigator.pop(context, {
                       'basePay':
                           int.tryParse(_basePayCtrl.text.replaceAll(',', '')) ??
@@ -162,20 +156,18 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
                     });
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color.fromARGB(
-                      255,
-                      249,
-                      217,
-                      39,
-                    ), // 정의된 노란색 사용
-                    foregroundColor: Colors.black, // 노란 배경엔 검정 글자가 팩트
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                    backgroundColor: const Color(0xFFF9D949),
+                    foregroundColor: Colors.black,
                   ),
-                  child: const Text("저장"),
+                  child: const Text(
+                    "저장",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
                 const SizedBox(width: 16),
               ],
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -205,9 +197,8 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
                 border: const OutlineInputBorder(),
                 hintText: hint,
                 hintStyle: const TextStyle(
-                  // ✅ 힌트색 연하게
-                  color: Color.fromARGB(255, 218, 218, 218),
-                  fontWeight: FontWeight.normal,
+                  color: Color.fromARGB(163, 198, 198, 198),
+                  fontSize: 14,
                 ),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
@@ -222,10 +213,7 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
             width: 30,
             child: Text(
               unit,
-              style: const TextStyle(
-                color: Colors.black87, // ✅ 진하게
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -241,7 +229,7 @@ class _BonusSettingDialogState extends State<BonusSettingDialog> {
   }
 }
 
-// ✅ 쉼표 입력 허용 Formatter (입력 시 자동 쉼표 포맷)
+// 콤마 포맷터 클래스는 동일하게 유지
 class ThousandsSeparatorInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(

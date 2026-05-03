@@ -1,23 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/work_service.dart';
 import 'bonus_setting_dialog.dart';
 
-// ----------------------------
-// 전역 팔레트 색상 상수 정의
-// ----------------------------
-const Color kAppBarColor = Color(0xFF3C486B); // 메인 네이비
+const Color kAppBarColor = Color(0xFF3C486B);
 
 class WorkCalendarBottomSummary extends StatefulWidget {
   final Map<String, Map<String, dynamic>> workData;
   final DateTime focusedMonth;
   final bool isPremium;
+  final VoidCallback onRefresh;
 
   const WorkCalendarBottomSummary({
     super.key,
     required this.workData,
     required this.focusedMonth,
     required this.isPremium,
+    required this.onRefresh,
   });
 
   @override
@@ -26,12 +25,13 @@ class WorkCalendarBottomSummary extends StatefulWidget {
 }
 
 class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
+  final _workService = WorkService();
+
   num basePay = 0;
   double weeklyDays = 0.0;
   double monthlyDays = 0.0;
   int efficiency = 0;
   double taxRate = 0.0;
-
   DateTime? startDate;
   DateTime? endDate;
 
@@ -39,16 +39,34 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
   void initState() {
     super.initState();
     _resetPeriod();
-    _loadBonusValuesForDate(startDate!);
+    _syncBonusFromWorkData();
   }
 
   @override
   void didUpdateWidget(covariant WorkCalendarBottomSummary oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.focusedMonth != widget.focusedMonth) {
-      _resetPeriod();
-      _loadBonusValuesForDate(startDate!);
+
+    final bool monthChanged =
+        oldWidget.focusedMonth.year != widget.focusedMonth.year ||
+        oldWidget.focusedMonth.month != widget.focusedMonth.month;
+
+    final bool dataChanged = oldWidget.workData != widget.workData;
+
+    if (monthChanged || dataChanged) {
+      if (monthChanged) _resetPeriod();
+      _syncBonusFromWorkData();
     }
+  }
+
+  void _syncBonusFromWorkData() {
+    final bonus = widget.workData['bonus_config'] ?? {};
+    setState(() {
+      basePay = bonus['basePay'] ?? 0;
+      weeklyDays = (bonus['weeklyDays'] ?? 0.0).toDouble();
+      monthlyDays = (bonus['monthlyDays'] ?? 0.0).toDouble();
+      efficiency = (bonus['efficiency'] ?? 0).toInt();
+      taxRate = (bonus['taxRate'] ?? 0.0).toDouble();
+    });
   }
 
   void _resetPeriod() {
@@ -64,6 +82,49 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
         0,
       );
     });
+  }
+
+  Future<void> _saveBonusToFirestore() async {
+    final config = {
+      'basePay': basePay.toInt(),
+      'weeklyDays': weeklyDays,
+      'monthlyDays': monthlyDays,
+      'efficiency': efficiency,
+      'taxRate': taxRate,
+    };
+
+    // [수정1] 기간(startDate) 상관없이 반드시 '현재 보고 있는 달(focusedMonth)'의 DB에 저장합니다.
+    await _workService.saveBonusConfig(
+      widget.focusedMonth.year,
+      widget.focusedMonth.month,
+      config,
+    );
+  }
+
+  Future<void> _openBonusDialog() async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => BonusSettingDialog(
+        initialBasePay: basePay.toInt(),
+        initialWeeklyDays: weeklyDays,
+        initialMonthlyDays: monthlyDays,
+        initialEfficiency: efficiency,
+        initialTaxRate: taxRate,
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        basePay = result['basePay'] ?? basePay;
+        weeklyDays = result['weeklyDays'] ?? weeklyDays;
+        monthlyDays = result['monthlyDays'] ?? monthlyDays;
+        efficiency = result['efficiency'] ?? efficiency;
+        taxRate = result['taxRate'] ?? taxRate;
+      });
+
+      await _saveBonusToFirestore();
+      widget.onRefresh();
+    }
   }
 
   Widget _datePickerThemeBuilder(BuildContext context, Widget? child) {
@@ -93,54 +154,6 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
     );
   }
 
-  Future<void> _saveBonusValuesForDate(DateTime date) async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = 'bonus_${date.year}_${date.month}';
-    await prefs.setInt('${key}_basePay', basePay.toInt());
-    await prefs.setDouble('${key}_weeklyDays', weeklyDays);
-    await prefs.setDouble('${key}_monthlyDays', monthlyDays);
-    await prefs.setInt('${key}_efficiency', efficiency);
-    await prefs.setDouble('${key}_taxRate', taxRate);
-  }
-
-  Future<void> _loadBonusValuesForDate(DateTime date) async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = 'bonus_${date.year}_${date.month}';
-    setState(() {
-      basePay = prefs.getInt('${key}_basePay') ?? 0;
-      weeklyDays = prefs.getDouble('${key}_weeklyDays') ?? 0.0;
-      monthlyDays = prefs.getDouble('${key}_monthlyDays') ?? 0.0;
-      efficiency = prefs.getInt('${key}_efficiency') ?? 0;
-      taxRate = prefs.getDouble('${key}_taxRate') ?? 0.0;
-    });
-  }
-
-  Future<void> _openBonusDialog() async {
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => BonusSettingDialog(
-        initialBasePay: basePay.toInt(),
-        initialWeeklyDays: weeklyDays,
-        initialMonthlyDays: monthlyDays,
-        initialEfficiency: efficiency,
-        initialTaxRate: taxRate,
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        basePay = result['basePay'] ?? basePay;
-        weeklyDays = result['weeklyDays'] ?? weeklyDays;
-        monthlyDays = result['monthlyDays'] ?? monthlyDays;
-        efficiency = result['efficiency'] ?? efficiency;
-        taxRate = result['taxRate'] ?? taxRate;
-      });
-      if (startDate != null) {
-        await _saveBonusValuesForDate(startDate!);
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     double workDaySum = 0;
@@ -150,44 +163,58 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
     double earlyLeaveSum = 0;
 
     widget.workData.forEach((key, value) {
+      if (key == 'bonus_config') return;
       final date = DateTime.tryParse(key);
       if (date == null || startDate == null || endDate == null) return;
       if (date.isBefore(startDate!) || date.isAfter(endDate!)) return;
 
       final double workDay = (value['workDay'] as num?)?.toDouble() ?? 0.0;
       final int dayPay = (value['dayPay'] as num?)?.toInt() ?? 0;
+      final double adj = (value['adjustment'] as num?)?.toDouble() ?? 0.0;
+      final bool isPaidLeave = value['isPaidLeave'] == true; // ✅ 유급 휴무 확인
 
-      workDaySum += workDay;
-      amountSum += (dayPay * workDay).round();
+      // ✅ 유급 휴무일 경우 실 공수에 1.0 강제 추가
+      double effectiveWorkDay = workDay;
+      if (isPaidLeave) {
+        effectiveWorkDay += 1.0;
+      }
 
-      if (workDay >= 1) {
+      workDaySum += effectiveWorkDay;
+      amountSum += ((dayPay * effectiveWorkDay) + adj).round();
+
+      // ✅ 정시/잔업/조퇴 계산 로직에도 유급 휴무(1공수)가 반영되도록 수정
+      if (effectiveWorkDay >= 1) {
         regularSum += 1;
-        if (workDay > 1) overtimeSum += (workDay - 1);
-      } else if (workDay > 0) {
-        earlyLeaveSum += workDay;
+        if (effectiveWorkDay > 1) overtimeSum += (effectiveWorkDay - 1);
+      } else if (effectiveWorkDay > 0) {
+        earlyLeaveSum += effectiveWorkDay;
       }
     });
 
-    final bonusSum = ((weeklyDays + monthlyDays + efficiency) * basePay).round();
-    final totalAmount = amountSum + bonusSum;
-    final netAmount = (totalAmount * (1 - taxRate / 100)).round();
-    final totalWorkDays = workDaySum + weeklyDays + monthlyDays + efficiency;
+    final bonusDays = weeklyDays + monthlyDays + efficiency;
+    final totalWorkDays = workDaySum + bonusDays;
+
+    final totalAmount = amountSum + (bonusDays * basePay).round();
+
+    final taxAmount = (totalAmount * (taxRate / 100)).round();
+    final netAmount = (totalAmount - taxAmount).round();
 
     return Container(
-      // 1. 배경색 투명화 (부모 카드색 사용) 및 패딩 압축
       color: Colors.transparent,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // --- 1단: 기간 및 능률 (FittedBox로 가로 터짐 방지) ---
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text("기간", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                const Text(
+                  "기간",
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(width: 8),
                 _buildDateBox(startDate!, () async {
                   final picked = await showDatePicker(
@@ -198,14 +225,14 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
                     locale: const Locale("ko", "KR"),
                     builder: _datePickerThemeBuilder,
                   );
-                  if (picked != null) {
-                    setState(() => startDate = picked);
-                    await _loadBonusValuesForDate(picked);
-                  }
+                  if (picked != null) setState(() => startDate = picked);
                 }),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: Text("~", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    "~",
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 _buildDateBox(endDate!, () async {
                   final picked = await showDatePicker(
@@ -223,16 +250,39 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
                   onTap: _openBonusDialog,
                   child: Row(
                     children: [
-                      const Text("능률", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 10),
+                      const Text(
+                        "능률",
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       Text.rich(
                         TextSpan(
                           children: [
-                            TextSpan(text: "$efficiency", style: const TextStyle(color: Color(0xFF4480E7))),
-                            const TextSpan(text: "개", style: TextStyle(color: Colors.black)),
+                            TextSpan(
+                              text: "$efficiency",
+                              style: const TextStyle(color: Color(0xFF4480E7)),
+                            ),
+                            const TextSpan(
+                              text: "개  ",
+                              style: TextStyle(color: Colors.black),
+                            ),
+                            const WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: Icon(
+                                Icons.add_circle,
+                                size: 20,
+                                color: Color.fromARGB(255, 55, 203, 1),
+                              ),
+                            ),
                           ],
                         ),
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
@@ -240,63 +290,109 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
               ],
             ),
           ),
-
-          const SizedBox(height: 10), // 세로 간격 다이어트
-
-          // --- 2단: 상세 통계 (박스 크기 최적화) ---
+          const SizedBox(height: 8),
           Row(
             children: [
-              _buildStatBox("정시", const Color(0xFF1B263B), "${regularSum.toStringAsFixed(1)}일"),
-              _buildStatBox("잔업", const Color(0xFFC62828), "${overtimeSum.toStringAsFixed(1)}일"),
-              _buildStatBox("조퇴", const Color(0xFFFBC02D), "${earlyLeaveSum.toStringAsFixed(1)}일"),
-              _buildStatBox("주/월", const Color(0xFF645282), "${weeklyDays.toInt()}/${monthlyDays.toInt()}개", onTap: _openBonusDialog),
+              _buildStatBox(
+                "정시",
+                const Color(0xFF1B263B),
+                "${regularSum.toStringAsFixed(1)}일",
+              ),
+              _buildStatBox(
+                "잔업",
+                const Color(0xFFC62828),
+                "${overtimeSum.toStringAsFixed(2)}일",
+              ),
+              _buildStatBox(
+                "조퇴",
+                const Color(0xFFFBC02D),
+                "${earlyLeaveSum.toStringAsFixed(1)}일",
+              ),
+              _buildStatBox(
+                "주/월",
+                const Color(0xFF645282),
+                "${weeklyDays.toInt()}/${monthlyDays.toInt()}개",
+                onTap: _openBonusDialog,
+              ),
             ],
           ),
-
-          // --- 3단: 구분선 (요청하신 부분) ---
-          Divider( height: 20, thickness: 1.5,color: Colors.grey,),
-
-          // --- 4단: 총 공수 및 합계 ---
+          Divider(height: 10, thickness: 1.2, color: Colors.grey.shade300),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text.rich(
-                TextSpan(
-                  text: "총 공수 ",
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    TextSpan(text: totalWorkDays.toStringAsFixed(2), style: const TextStyle(color: Colors.blue)),
-                    const TextSpan(text: "일   합계 "),
-                    TextSpan(
-                      text: NumberFormat('#,###').format(netAmount),
-                      style: const TextStyle(color: Color(0xFFD53A2F)),
+                    Text.rich(
+                      TextSpan(
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        children: [
+                          const TextSpan(text: "총 공수 "),
+                          TextSpan(
+                            text: totalWorkDays.toStringAsFixed(2),
+                            style: const TextStyle(color: Colors.blue),
+                          ),
+                          const TextSpan(text: "일     합계 "),
+                          TextSpan(
+                            text: NumberFormat('#,###').format(totalAmount),
+                            style: const TextStyle(color: Color(0xFF2D6A4F)),
+                          ),
+                          const TextSpan(text: "원"),
+                        ],
+                      ),
                     ),
-                    const TextSpan(text: "원"),
+                    if (taxRate > 0) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          "세액($taxRate%): -${NumberFormat('#,###').format(taxAmount)}원",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              const TextSpan(
+                                text: "실 수령액 ",
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              TextSpan(
+                                text:
+                                    "${NumberFormat('#,###').format(netAmount)}원",
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFD53A2F),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                textAlign: TextAlign.center,
               ),
             ),
           ),
-
-          // --- 5단: 세금 상세 (여기에 추가됨) ---
-          if (taxRate > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 2, right: 12), // 합계 글자보다 살끔 안으로 밀어 넣음
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  "세액(${taxRate}%): -${NumberFormat('#,###').format((totalAmount * (taxRate / 100)).round())}원",
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-        ], // Column의 자식 리스트 끝
+        ],
       ),
     );
   }
@@ -305,14 +401,14 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
     return GestureDetector(
       onTap: () => onTap(),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), // 패딩 다이어트
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: Colors.grey.shade200,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
           DateFormat("MM.dd").format(date),
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold), // 폰트 다이어트
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -328,11 +424,12 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
       child: GestureDetector(
         onTap: onTap != null ? () => onTap() : null,
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 2), // 마진 축소
+          margin: const EdgeInsets.symmetric(horizontal: 8),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 4), // 내부 패딩 축소
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 decoration: BoxDecoration(
                   color: color,
                   borderRadius: BorderRadius.circular(4),
@@ -340,14 +437,23 @@ class _WorkCalendarBottomSummaryState extends State<WorkCalendarBottomSummary> {
                 child: Center(
                   child: Text(
                     title,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      height: 1.1,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 2),
               Text(
                 displayValue,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                  height: 1.1,
+                ),
               ),
             ],
           ),

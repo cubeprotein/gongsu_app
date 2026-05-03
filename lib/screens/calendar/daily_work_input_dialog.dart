@@ -1,16 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-/// 📌 공수 입력 다이얼로그
-/// - 날짜별 공수(1, 0.7 등), 일당(dayPay), 현장명, (옵션) 조정치/월차 입력
-/// - '저장' 시 Map<String,dynamic> 반환:
-///   {
-///     'workDay': double,    // 예: 1, 0.7
-///     'dayPay':  int,       // 예: 100000
-///     'siteName': String,   // 예: 울산알루미늄
-///     'adjustment': double, // 예: 0.2, -0.3 (없으면 0)
-///     'leave': int          // 예: 1 (없으면 0)
-///   }
+
 class DailyWorkInputDialog extends StatefulWidget {
   final DateTime date;
   final Map<String, dynamic>? initialData;
@@ -28,24 +19,27 @@ class _DailyWorkInputDialogState extends State<DailyWorkInputDialog> {
   late TextEditingController _siteNameController; // 현장명
   late TextEditingController _adjustController; // 조정치(옵션)
   late TextEditingController _leaveController; // 월차(옵션)
+  late TextEditingController _memoController; // ✅ 메모 추가
 
   @override
   void initState() {
     super.initState();
 
-    // ✅ 초기값 매핑 (legacy 호환: unitPrice → dayPay)
+    // 초기값 매핑 (legacy 호환: unitPrice → dayPay)
     final init = widget.initialData ?? {};
     final initWorkDay = init['workDay']?.toString() ?? '';
     final initDayPay = (init['dayPay'] ?? init['unitPrice'])?.toString() ?? '';
     final initSite = init['siteName']?.toString() ?? '';
     final initAdj = init['adjustment']?.toString() ?? '';
     final initLeave = init['leave']?.toString() ?? '';
+    final initMemo = init['memo']?.toString() ?? ''; // ✅ 메모 초기값
 
     _workDayController = TextEditingController(text: initWorkDay);
     _dayPayController = TextEditingController(text: initDayPay);
     _siteNameController = TextEditingController(text: initSite);
     _adjustController = TextEditingController(text: initAdj);
     _leaveController = TextEditingController(text: initLeave);
+    _memoController = TextEditingController(text: initMemo); // ✅ 메모 초기화
   }
 
   @override
@@ -55,6 +49,7 @@ class _DailyWorkInputDialogState extends State<DailyWorkInputDialog> {
     _siteNameController.dispose();
     _adjustController.dispose();
     _leaveController.dispose();
+    _memoController.dispose(); // ✅ 메모 해제
     super.dispose();
   }
 
@@ -143,6 +138,16 @@ class _DailyWorkInputDialogState extends State<DailyWorkInputDialog> {
                 hintText: '예: 1',
               ),
             ),
+            const SizedBox(height: 8),
+
+            // ✅ (옵션) 메모 추가
+            TextField(
+              controller: _memoController,
+              decoration: const InputDecoration(
+                labelText: '메모 (옵션)',
+                hintText: '예: 야간 연장, 특이사항 등',
+              ),
+            ),
           ],
         ),
       ),
@@ -153,7 +158,7 @@ class _DailyWorkInputDialogState extends State<DailyWorkInputDialog> {
         ),
         ElevatedButton(
           onPressed: () {
-            // ✅ 유효성 검사
+            // 유효성 검사
             final workDay = _parseNum(_workDayController.text)?.toDouble();
             final dayPay = _parseNum(_dayPayController.text)?.toInt();
             final siteName = _siteNameController.text.trim();
@@ -165,17 +170,19 @@ class _DailyWorkInputDialogState extends State<DailyWorkInputDialog> {
               return;
             }
 
-            // (옵션) 조정치/월차 처리
+            // (옵션) 조정치/월차/메모 처리
             final adjustment = _parseDoubleOrZero(_adjustController.text);
             final leave = _parseIntOrZero(_leaveController.text);
+            final memo = _memoController.text.trim(); // ✅ 메모 가져오기
 
-            // ✅ Map으로 반환 (dayPay로 통일 + legacy 호환 불필요)
+            // Map으로 반환
             Navigator.of(context).pop({
               'workDay': workDay,
               'dayPay': dayPay,
               'siteName': siteName,
               'adjustment': adjustment,
               'leave': leave,
+              'memo': memo, // ✅ 반환 데이터에 메모 포함
             });
           },
           child: const Text('저장'),

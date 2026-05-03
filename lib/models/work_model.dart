@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 class WorkModel {
   final String id; // 날짜 (예: 2026-04-21) - Firestore 문서 ID로 사용
   final double workDay; // 공수 (1.0, 0.5 등)

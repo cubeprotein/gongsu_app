@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "566776554664",
+    "project_id": "gongsu-app-6dd4b",
+    "storage_bucket": "gongsu-app-6dd4b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:566776554664:android:e4bda2f2560b460b960e9d",
+        "android_client_info": {
+          "package_name": "com.gongsu.plant"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "566776554664-28bckge662mhshoi6p6qscdlrcg57iog.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gongsu.plant",
+            "certificate_hash": "24b1cf9b33efbff3fc6452610fbde6623b84bb31"
+          }
+        },
+        {
+          "client_id": "566776554664-pcfmhes0od57khm21bn90te27q5ffvun.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBzZJD8Q1RlKvMIpZg3q_HIkorPAxeBQ3s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "566776554664-pcfmhes0od57khm21bn90te27q5ffvun.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

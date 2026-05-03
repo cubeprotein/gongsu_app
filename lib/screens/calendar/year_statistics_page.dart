@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 import '../../services/work_service.dart';
 import 'work_calendar_page.dart';
+import '../tax/export_report_modal.dart'; // 추가됨: 캡처 모달 임포트
 
 class YearStatisticsPage extends StatefulWidget {
   final int year;
@@ -12,8 +17,14 @@ class YearStatisticsPage extends StatefulWidget {
 }
 
 class _YearStatisticsPageState extends State<YearStatisticsPage> {
+  final GlobalKey _repaintKey = GlobalKey(); // 캡처용 키 추가
   late int _currentYear;
+  final _workService = WorkService();
+
   Map<String, Map<String, dynamic>> yearlyData = {};
+  Map<int, Map<String, dynamic>> monthlyCalculated = {};
+  double totalYearGongsu = 0;
+  double totalYearAmount = 0;
   bool isLoading = true;
 
   @override
@@ -23,64 +34,91 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
     _loadYearlyData();
   }
 
-  // 데이터 로드 로직 (연도 변경이나 화면 복귀 시 호출)
   Future<void> _loadYearlyData() async {
     if (!mounted) return;
     setState(() => isLoading = true);
-    final data = await WorkService.getYearlyData(_currentYear);
-    if (mounted) {
-      setState(() {
-        yearlyData = data;
-        isLoading = false;
-      });
+
+    try {
+      final List<Map<String, dynamic>> allMonthsRaw = await Future.wait(
+        List.generate(
+          12,
+          (i) => _workService.getMonthlyData(_currentYear, i + 1),
+        ),
+      );
+
+      Map<String, Map<String, dynamic>> tempYearlyData = {};
+      Map<int, Map<String, dynamic>> tempCalculated = {};
+      double tempTotalGongsu = 0;
+      double tempTotalAmount = 0;
+
+      for (int i = 0; i < 12; i++) {
+        final month = i + 1;
+        final rawData = allMonthsRaw[i];
+
+        final summary = _workService.calculateMonthSummaryFromMap(rawData);
+        tempCalculated[month] = summary;
+
+        tempTotalGongsu += (summary['totalGongsu'] ?? 0).toDouble();
+        tempTotalAmount += (summary['totalAmount'] ?? 0).toDouble();
+
+        rawData.forEach((dayKey, value) {
+          if (dayKey == 'bonus_config') return;
+          String fullDateKey =
+              "$_currentYear-${month.toString().padLeft(2, '0')}-${dayKey.padLeft(2, '0')}";
+          tempYearlyData[fullDateKey] = Map<String, dynamic>.from(value as Map);
+        });
+      }
+
+      if (mounted) {
+        setState(() {
+          yearlyData = tempYearlyData;
+          monthlyCalculated = tempCalculated;
+          totalYearGongsu = tempTotalGongsu;
+          totalYearAmount = tempTotalAmount;
+        });
+      }
+    } catch (e) {
+      debugPrint("년간 데이터 로드 에러: $e");
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
-  void _showYearPicker() {
+  // 내보내기(캡처) 기능 추가
+  Future<void> _showExport() async {
+    RenderRepaintBoundary boundary =
+        _repaintKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+    ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    Uint8List pngBytes = byteData!.buffer.asUint8List();
+
+    if (!mounted) return;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(
-          '연도 선택',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: 11,
-            itemBuilder: (context, index) {
-              int year = DateTime.now().year - 5 + index;
-              return ListTile(
-                title: Text('$year년', textAlign: TextAlign.center),
-                selected: year == _currentYear,
-                onTap: () {
-                  setState(() => _currentYear = year);
-                  _loadYearlyData();
-                  Navigator.pop(context);
-                },
-              );
-            },
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-        ),
-      ),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
+          child: ExportReportModal(
+            title: "연간 공수표", // 이름 지정
+            capturedImage: pngBytes,
+          ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // 실시간 연간 합계 계산 (화면이 그려질 때마다 최신 yearlyData 반영)
-    double totalYearlyWorkDay = 0;
-    double totalYearlyAmount = 0;
-
-    yearlyData.forEach((key, value) {
-      final double workDay =
-          double.tryParse(value['workDay']?.toString() ?? '0') ?? 0.0;
-      final num dayPay = num.tryParse(value['dayPay']?.toString() ?? '0') ?? 0;
-      totalYearlyWorkDay += workDay;
-      totalYearlyAmount += (workDay * dayPay);
-    });
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -89,45 +127,55 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
         foregroundColor: Colors.white,
         elevation: 0,
         toolbarHeight: 45,
+        actions: [
+          // 내보내기 아이콘 추가
+          IconButton(
+            icon: const Icon(Icons.ios_share, color: Colors.white),
+            onPressed: _showExport,
+          ),
+        ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildYearHeader(),
-            _buildYearlySummary(totalYearlyWorkDay, totalYearlyAmount),
-            Expanded(
-              child: isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : Center(
-                      child: SingleChildScrollView(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 10,
+        child: RepaintBoundary(
+          // 캡처 영역 지정
+          key: _repaintKey,
+          child: Container(
+            color: const Color(0xFFF5F5F5), // 캡처 시 배경색 유지
+            child: Column(
+              children: [
+                _buildYearHeader(),
+                _buildYearlySummary(totalYearGongsu, totalYearAmount),
+                Expanded(
+                  child: isLoading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF3C486B),
                           ),
-                          child: GridView.count(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisCount: 3,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                            childAspectRatio: 0.72,
-                            children: List.generate(
-                              12,
-                              (index) => _buildMonthItem(index + 1),
-                            ),
+                        )
+                      : Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: GridView.builder(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                  childAspectRatio: 0.72,
+                                ),
+                            itemCount: 12,
+                            itemBuilder: (context, index) =>
+                                _buildMonthItem(index + 1),
                           ),
                         ),
-                      ),
-                    ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  // 1단: 연도 선택 조절바 (패딩 최소화)
   Widget _buildYearHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -136,8 +184,6 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-            constraints: const BoxConstraints(),
-            padding: const EdgeInsets.all(4),
             icon: const Icon(
               Icons.arrow_left,
               size: 30,
@@ -148,20 +194,15 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
               _loadYearlyData();
             },
           ),
-          GestureDetector(
-            onTap: _showYearPicker,
-            child: Text(
-              '$_currentYear년',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF3C486B),
-              ),
+          Text(
+            '$_currentYear년',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF3C486B),
             ),
           ),
           IconButton(
-            constraints: const BoxConstraints(),
-            padding: const EdgeInsets.all(4),
             icon: const Icon(
               Icons.arrow_right,
               size: 30,
@@ -177,10 +218,9 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
     );
   }
 
-  // 2단: 연간 요약 바 (글자 시인성 강화)
-  Widget _buildYearlySummary(double totalGongsu, double totalAmount) {
+  Widget _buildYearlySummary(double gongsu, double amount) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF3C486B).withOpacity(0.08),
         border: Border(
@@ -188,58 +228,29 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
         ),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Expanded(child: _summaryItem("총 공수", totalGongsu.toStringAsFixed(1))),
-          Container(width: 1, height: 12, color: Colors.grey.shade400),
-          Expanded(
-            child: _summaryItem(
-              "총 금액",
-              NumberFormat('#,###').format(totalAmount),
-            ),
+          Text(
+            "총 공수 : ${gongsu.toStringAsFixed(1)}",
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(width: 20),
+          Text(
+            "총 금액(세전) : ${NumberFormat('#,###').format(amount)}원",
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
           ),
         ],
       ),
     );
   }
 
-  Widget _summaryItem(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          "$label : ",
-          style: const TextStyle(
-            fontSize: 11,
-            color: Color(0xFF444444),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            color: Color(0xFF000000),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildMonthItem(int month) {
-    double monthlyTotal = 0;
-    yearlyData.forEach((key, value) {
-      if (key.startsWith('$_currentYear-${month.toString().padLeft(2, '0')}')) {
-        final double workDay =
-            double.tryParse(value['workDay']?.toString() ?? '0') ?? 0.0;
-        final num dayPay =
-            num.tryParse(value['dayPay']?.toString() ?? '0') ?? 0;
-        monthlyTotal += (workDay * dayPay);
-      }
-    });
+    final summary =
+        monthlyCalculated[month] ?? {'totalGongsu': 0.0, 'totalAmount': 0.0};
+    final double gongsu = summary['totalGongsu'];
+    final double amount = summary['totalAmount'];
 
     return GestureDetector(
-      // [핵심 수정] async/await를 사용하여 월간 달력에서 돌아올 때 데이터를 새로고침함
       onTap: () async {
         await Navigator.push(
           context,
@@ -250,7 +261,7 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
             ),
           ),
         );
-        _loadYearlyData(); // 돌아오는 순간 DB에서 최신 데이터 다시 로드
+        _loadYearlyData();
       },
       child: Container(
         decoration: BoxDecoration(
@@ -273,7 +284,7 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
             Expanded(child: _buildMiniCalendar(month)),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 3),
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
               decoration: BoxDecoration(
                 color: Colors.grey.shade100,
                 borderRadius: const BorderRadius.only(
@@ -283,9 +294,8 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
               ),
               child: Center(
                 child: FittedBox(
-                  fit: BoxFit.scaleDown,
                   child: Text(
-                    '${NumberFormat('#,###').format(monthlyTotal)}원',
+                    '${gongsu.toStringAsFixed(1)} / ${NumberFormat('#,###').format(amount)}원',
                     style: const TextStyle(
                       fontSize: 9,
                       fontWeight: FontWeight.w900,
@@ -305,7 +315,6 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
     final firstDay = DateTime(_currentYear, month, 1);
     final lastDay = DateTime(_currentYear, month + 1, 0);
     final startWeekday = firstDay.weekday % 7;
-
     return GridView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       physics: const NeverScrollableScrollPhysics(),
@@ -318,20 +327,17 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
       itemBuilder: (context, index) {
         final dayNum = index - startWeekday + 1;
         if (dayNum <= 0 || dayNum > lastDay.day) return const SizedBox();
-
         final dateKey = DateFormat(
           'yyyy-MM-dd',
         ).format(DateTime(_currentYear, month, dayNum));
         final data = yearlyData[dateKey];
 
-        // 공수와 휴무 데이터를 함께 체크
-        final workDay =
-            double.tryParse(data?['workDay']?.toString() ?? '0') ?? 0.0;
-        final int leave = int.tryParse(data?['leave']?.toString() ?? '0') ?? 0;
-
         return Container(
           decoration: BoxDecoration(
-            color: _getHeatmapColor(workDay, leave),
+            color: _getHeatmapColor(
+              double.tryParse(data?['workDay']?.toString() ?? '0') ?? 0.0,
+              int.tryParse(data?['leave']?.toString() ?? '0') ?? 0,
+            ),
             borderRadius: BorderRadius.circular(1),
           ),
           child: Center(
@@ -349,13 +355,12 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
     );
   }
 
-  // 색상 로직 (휴무 진녹색 추가)
   Color _getHeatmapColor(double wd, int leave) {
-    if (leave > 0) return const Color(0xFF2D6A4F); // 휴무 (진녹색)
-    if (wd == 0) return Colors.grey.shade300; // 일 없음 (회색)
-    if (wd <= 0.5) return const Color(0xFFFBC02D); // 0.5공수 (노랑)
-    if (wd == 1.0) return const Color(0xFF617A98); // 1.0공수 (파랑)
-    if (wd >= 2.0) return const Color(0xFFE54E4B); // 2.0이상 (빨강)
-    return const Color(0xFF617A98);
+    if (leave > 0) return const Color(0xFF2D6A4F);
+    if (wd == 0) return Colors.grey.shade300;
+    if (wd <= 0.5) return const Color(0xFFFBC02D);
+    if (wd == 1.0) return const Color(0xFF617A98);
+    if (wd > 1.0 && wd < 2.0) return const Color(0xFF2C2C2C);
+    return const Color(0xFFE54E4B);
   }
 }
