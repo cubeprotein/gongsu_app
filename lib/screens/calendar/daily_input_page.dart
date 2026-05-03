@@ -226,6 +226,10 @@ class _DailyInputPageState extends State<DailyInputPage> {
                           _isLeave = false; // 상호 배타적
                         }
                       });
+                      // ✅ 유급 선택 시 비어있는 입력란을 최근 데이터로 채움
+                      if (_isPaidLeave) {
+                        _loadLastInputs();
+                      }
                     },
                   ),
                 ],
