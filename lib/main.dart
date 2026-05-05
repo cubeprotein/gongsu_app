@@ -17,7 +17,6 @@ void main() async {
   kakao.KakaoSdk.init(nativeAppKey: '1af73a293a97369b17ea96ad9a6e17c6');
 
   // 2. 공휴일 동기화 (앱 실행 시 딱 한 번만 수행)
-  // ✅ 이제 다른 페이지(SplashPage, CalendarPage 등)의 build 함수 안에서 이 함수를 호출하지 마세요.
   await HolidayManager.syncHolidays();
 
   FirebaseFirestore.instance.settings = const Settings(
@@ -46,6 +45,23 @@ class GongsuApp extends StatelessWidget {
     return MaterialApp(
       title: '플랜트공수',
       debugShowCheckedModeBanner: false,
+
+      // ✅ 글자 크기 락(Lock) 방어 로직 추가
+      builder: (context, child) {
+        final mediaQueryData = MediaQuery.of(context);
+
+        // 기기 설정 글자 크기가 커져도 최대 1.15배까지만 허용 (화면 붕괴 원천 차단)
+        final scale = mediaQueryData.textScaler.clamp(
+          minScaleFactor: 1.0,
+          maxScaleFactor: 1.15,
+        );
+
+        return MediaQuery(
+          data: mediaQueryData.copyWith(textScaler: scale),
+          child: child!,
+        );
+      },
+
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,

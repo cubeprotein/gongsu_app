@@ -6,7 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 import '../../services/work_service.dart';
 import 'work_calendar_page.dart';
-import '../tax/export_report_modal.dart'; // 추가됨: 캡처 모달 임포트
+import '../tax/export_report_modal.dart';
 
 class YearStatisticsPage extends StatefulWidget {
   final int year;
@@ -17,7 +17,7 @@ class YearStatisticsPage extends StatefulWidget {
 }
 
 class _YearStatisticsPageState extends State<YearStatisticsPage> {
-  final GlobalKey _repaintKey = GlobalKey(); // 캡처용 키 추가
+  final GlobalKey _repaintKey = GlobalKey();
   late int _currentYear;
   final _workService = WorkService();
 
@@ -86,7 +86,6 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
     }
   }
 
-  // 내보내기(캡처) 기능 추가
   Future<void> _showExport() async {
     RenderRepaintBoundary boundary =
         _repaintKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
@@ -108,10 +107,7 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
             horizontal: 16,
             vertical: 24,
           ),
-          child: ExportReportModal(
-            title: "연간 공수표", // 이름 지정
-            capturedImage: pngBytes,
-          ),
+          child: ExportReportModal(title: "연간 공수표", capturedImage: pngBytes),
         );
       },
     );
@@ -128,7 +124,6 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
         elevation: 0,
         toolbarHeight: 45,
         actions: [
-          // 내보내기 아이콘 추가
           IconButton(
             icon: const Icon(Icons.ios_share, color: Colors.white),
             onPressed: _showExport,
@@ -136,11 +131,11 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
         ],
       ),
       body: SafeArea(
+        bottom: true, // 하단 네비게이션 바 침범 방지
         child: RepaintBoundary(
-          // 캡처 영역 지정
           key: _repaintKey,
           child: Container(
-            color: const Color(0xFFF5F5F5), // 캡처 시 배경색 유지
+            color: const Color(0xFFF5F5F5),
             child: Column(
               children: [
                 _buildYearHeader(),
@@ -152,20 +147,44 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
                             color: Color(0xFF3C486B),
                           ),
                         )
-                      : Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: GridView.builder(
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  crossAxisSpacing: 8,
-                                  mainAxisSpacing: 8,
-                                  childAspectRatio: 0.72,
-                                ),
-                            itemCount: 12,
-                            itemBuilder: (context, index) =>
-                                _buildMonthItem(index + 1),
-                          ),
+                      // ✅ LayoutBuilder 적용: 기기별 남은 세로 공간 계산 및 동적 비율 적용
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            const double padding = 10.0;
+                            const double crossSpacing = 8.0;
+                            const double mainSpacing = 8.0;
+
+                            final double availableWidth =
+                                constraints.maxWidth - (padding * 2);
+                            final double availableHeight =
+                                constraints.maxHeight - (padding * 2);
+
+                            final double itemWidth =
+                                (availableWidth - (crossSpacing * 2)) / 3;
+                            final double itemHeight =
+                                (availableHeight - (mainSpacing * 3)) / 4;
+
+                            final double dynamicRatio = itemWidth / itemHeight;
+
+                            return Padding(
+                              padding: const EdgeInsets.all(padding),
+                              child: GridView.builder(
+                                physics:
+                                    const NeverScrollableScrollPhysics(), // 스크롤 방지
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 3,
+                                      crossAxisSpacing: crossSpacing,
+                                      mainAxisSpacing: mainSpacing,
+                                      childAspectRatio:
+                                          dynamicRatio, // 동적 비율 적용
+                                    ),
+                                itemCount: 12,
+                                itemBuilder: (context, index) =>
+                                    _buildMonthItem(index + 1),
+                              ),
+                            );
+                          },
                         ),
                 ),
               ],
@@ -293,11 +312,13 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
                 ),
               ),
               child: Center(
+                // ✅ FittedBox 적용
                 child: FittedBox(
+                  fit: BoxFit.scaleDown,
                   child: Text(
                     '${gongsu.toStringAsFixed(1)} / ${NumberFormat('#,###').format(amount)}원',
                     style: const TextStyle(
-                      fontSize: 9,
+                      fontSize: 10,
                       fontWeight: FontWeight.w900,
                       color: Color(0xFF222222),
                     ),
@@ -332,21 +353,31 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
         ).format(DateTime(_currentYear, month, dayNum));
         final data = yearlyData[dateKey];
 
+        final bool isPaidLeave = data?['isPaidLeave'] == true;
+
         return Container(
           decoration: BoxDecoration(
             color: _getHeatmapColor(
               double.tryParse(data?['workDay']?.toString() ?? '0') ?? 0.0,
               int.tryParse(data?['leave']?.toString() ?? '0') ?? 0,
+              isPaidLeave,
             ),
             borderRadius: BorderRadius.circular(1),
           ),
           child: Center(
-            child: Text(
-              '$dayNum',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 5.5,
-                fontWeight: FontWeight.bold,
+            // ✅ FittedBox 적용: 고정 폰트 크기(5.5) 제거
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.all(0.5),
+                child: Text(
+                  '$dayNum',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 7, // 약간 키워두고 자동 축소되게 함
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ),
@@ -355,7 +386,8 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
     );
   }
 
-  Color _getHeatmapColor(double wd, int leave) {
+  Color _getHeatmapColor(double wd, int leave, bool isPaidLeave) {
+    if (isPaidLeave) return const Color(0xFF8E44AD);
     if (leave > 0) return const Color(0xFF2D6A4F);
     if (wd == 0) return Colors.grey.shade300;
     if (wd <= 0.5) return const Color(0xFFFBC02D);

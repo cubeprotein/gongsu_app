@@ -440,7 +440,7 @@ class _WorkCalendarPageState extends State<WorkCalendarPage> {
                       width: 4,
                       height: 4,
                       decoration: const BoxDecoration(
-                        color: Colors.orange,
+                        color: Color(0xFF8E44AD),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -452,7 +452,7 @@ class _WorkCalendarPageState extends State<WorkCalendarPage> {
                   children: [
                     const SizedBox(height: 1),
                     if (isPaidLeave)
-                      _badge('유급', Colors.orange, 8.5)
+                      _badge('유급', Color(0xFF8E44AD), 8.5)
                     else if (leave > 0)
                       _badge('휴무', const Color(0xFF2D6A4F), 8.5)
                     else if (workDay != 0)

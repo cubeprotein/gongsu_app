@@ -217,7 +217,7 @@ class _DailyInputPageState extends State<DailyInputPage> {
                   ),
                   Checkbox(
                     value: _isPaidLeave,
-                    activeColor: Colors.orange,
+                    activeColor: Color(0xFF8E44AD),
                     onChanged: (val) {
                       setState(() {
                         _isPaidLeave = val ?? false;
@@ -278,7 +278,7 @@ class _DailyInputPageState extends State<DailyInputPage> {
                   decoration: BoxDecoration(
                     // ✅ 휴무 또는 유급일 때 색상 변경
                     color: _isPaidLeave
-                        ? Colors.orange
+                        ? Color(0xFF8E44AD)
                         : (_isLeave
                               ? kLeaveActiveColor
                               : const Color.fromARGB(255, 250, 208, 19)),
