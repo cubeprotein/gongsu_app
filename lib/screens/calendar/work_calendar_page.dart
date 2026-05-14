@@ -544,7 +544,7 @@ class _WorkCalendarPageState extends State<WorkCalendarPage> {
 
   Color _colorForWorkDay(dynamic wd) {
     if (wd is! num) return const Color(0xFF3D3D3D);
-    if (wd <= 0.5) return const Color(0xFFFBC02D);
+    if (wd < 1) return const Color(0xFFFBC02D);
     if (wd == 1) return const Color(0xFF617A98);
     if (wd >= 2) return const Color(0xFFE54E4B);
     return const Color(0xFF3D3D3D);
