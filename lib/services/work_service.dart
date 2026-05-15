@@ -7,20 +7,17 @@ class WorkService {
 
   String get _uid => _auth.currentUser?.uid ?? '';
 
-  // 문서 참조 경로 표준화
-  DocumentReference _getDocRef(int year, int month) {
-    String monthStr = month.toString().padLeft(2, '0');
+  DocumentReference _getYearlyDocRef(int year) {
     return _firestore
         .collection('users')
         .doc(_uid)
-        .collection('monthly_logs')
-        .doc('$year-$monthStr');
+        .collection('yearly_logs')
+        .doc('$year');
   }
 
-  // [핵심] 초고속 로컬 캐시 우선 읽기
-  Future<Map<String, dynamic>> _getMonthlyDoc(int year, int month) async {
+  Future<Map<String, dynamic>> _getYearlyDoc(int year) async {
     if (_uid.isEmpty) return {};
-    final docRef = _getDocRef(year, month);
+    final docRef = _getYearlyDocRef(year);
 
     try {
       DocumentSnapshot doc = await docRef.get(
@@ -41,93 +38,87 @@ class WorkService {
     }
   }
 
-  // 특정 월의 순수 데이터 반환
-  Future<Map<String, dynamic>> getMonthlyData(int year, int month) async {
-    return await _getMonthlyDoc(year, month);
-  }
-
-  // UI용 데이터 변환 (이제 bonus_config도 함께 반환합니다)
   Future<Map<String, Map<String, dynamic>>> getMonthlyDataForUI(
     int year,
     int month,
   ) async {
-    final rawData = await _getMonthlyDoc(year, month);
+    final yearlyData = await _getYearlyDoc(year);
+    Map<String, Map<String, dynamic>> monthlyData = {};
+
+    String monthPrefix = "$year-${month.toString().padLeft(2, '0')}-";
+    String bonusKey = "bonus_config_${month.toString().padLeft(2, '0')}";
+
+    yearlyData.forEach((key, value) {
+      if (key.startsWith(monthPrefix)) {
+        monthlyData[key] = Map<String, dynamic>.from(value as Map);
+      } else if (key == bonusKey) {
+        monthlyData['bonus_config'] = Map<String, dynamic>.from(value as Map);
+      }
+    });
+
+    return monthlyData;
+  }
+
+  Future<Map<String, Map<String, dynamic>>> getYearlyData(int year) async {
+    final rawData = await _getYearlyDoc(year);
     Map<String, Map<String, dynamic>> formattedData = {};
 
     rawData.forEach((key, value) {
-      // 날짜 데이터(01, 02...)와 설정 데이터(bonus_config)를 모두 포함시킵니다.
-      if (key == 'bonus_config') {
-        formattedData[key] = Map<String, dynamic>.from(value as Map);
-      } else {
-        String fullDateKey =
-            "$year-${month.toString().padLeft(2, '0')}-${key.padLeft(2, '0')}";
-        formattedData[fullDateKey] = Map<String, dynamic>.from(value as Map);
-      }
+      formattedData[key] = Map<String, dynamic>.from(value as Map);
     });
     return formattedData;
   }
 
-  // 12개월치 통합 데이터 반환
-  Future<Map<String, Map<String, dynamic>>> getYearlyData(int year) async {
-    final futures = List.generate(12, (i) => getMonthlyDataForUI(year, i + 1));
-    final results = await Future.wait(futures);
-
-    Map<String, Map<String, dynamic>> yearlyAll = {};
-    for (var monthMap in results) {
-      yearlyAll.addAll(monthMap);
-    }
-    return yearlyAll;
-  }
-
-  // 공수 저장
   Future<void> saveWorkLog(String dateKey, Map<String, dynamic> data) async {
     if (_uid.isEmpty) return;
     DateTime date = DateTime.parse(dateKey);
-    String dayKey = date.day.toString().padLeft(2, '0');
 
-    await _getDocRef(
+    await _getYearlyDocRef(
       date.year,
-      date.month,
-    ).set({dayKey: data}, SetOptions(merge: true));
+    ).set({dateKey: data}, SetOptions(merge: true));
   }
 
-  // ✅ 보너스 설정 저장 (기존 SharedPreferences를 대체)
   Future<void> saveBonusConfig(
     int year,
     int month,
     Map<String, dynamic> config,
   ) async {
     if (_uid.isEmpty) return;
-    await _getDocRef(
+    String monthStr = month.toString().padLeft(2, '0');
+
+    await _getYearlyDocRef(
       year,
-      month,
-    ).set({'bonus_config': config}, SetOptions(merge: true));
+    ).set({'bonus_config_$monthStr': config}, SetOptions(merge: true));
   }
 
-  // 삭제
   Future<void> deleteWorkLog(String dateKey) async {
     if (_uid.isEmpty) return;
     DateTime date = DateTime.parse(dateKey);
-    String dayKey = date.day.toString().padLeft(2, '0');
 
-    await _getDocRef(
-      date.year,
-      date.month,
-    ).update({dayKey: FieldValue.delete()});
+    await _getYearlyDocRef(date.year).update({dateKey: FieldValue.delete()});
   }
 
-  // 연간 통계 계산
   Future<Map<String, dynamic>> calculateYearlySummary(int year) async {
     double totalGongsu = 0;
     double totalAmount = 0;
 
-    final List<Map<String, dynamic>> allMonthsRaw = await Future.wait(
-      List.generate(12, (i) => getMonthlyData(year, i + 1)),
-    );
+    final yearlyData = await _getYearlyDoc(year);
 
-    for (var monthData in allMonthsRaw) {
-      if (monthData.isNotEmpty) {
-        final summary = calculateMonthSummaryFromMap(monthData);
+    for (int m = 1; m <= 12; m++) {
+      String monthPrefix = "$year-${m.toString().padLeft(2, '0')}-";
+      String bonusKey = "bonus_config_${m.toString().padLeft(2, '0')}";
+
+      Map<String, dynamic> monthTempData = {};
+      yearlyData.forEach((key, value) {
+        if (key.startsWith(monthPrefix)) {
+          monthTempData[key] = value;
+        } else if (key == bonusKey) {
+          monthTempData['bonus_config'] = value;
+        }
+      });
+
+      if (monthTempData.isNotEmpty) {
+        final summary = calculateMonthSummaryFromMap(monthTempData);
         totalGongsu += (summary['totalGongsu'] ?? 0).toDouble();
         totalAmount += (summary['totalAmount'] ?? 0).toDouble();
       }
@@ -135,7 +126,6 @@ class WorkService {
     return {'totalGongsu': totalGongsu, 'totalAmount': totalAmount};
   }
 
-  // 요약 계산 로직
   Map<String, dynamic> calculateMonthSummaryFromMap(
     Map<String, dynamic> monthlyData,
   ) {
@@ -162,5 +152,42 @@ class WorkService {
       'totalGongsu': dailyGongsu + w + m + e,
       'totalAmount': dailyAmount + ((w + m + e) * base),
     };
+  }
+
+  // 일회성 마이그레이션 함수
+  Future<void> migrateOldDataToYearlyStructure(int year) async {
+    if (_uid.isEmpty) return;
+
+    final yearlyDoc = await _getYearlyDocRef(year).get();
+    if (yearlyDoc.exists) return; // 중복 실행 방지
+
+    Map<String, dynamic> combinedYearlyData = {};
+
+    for (int month = 1; month <= 12; month++) {
+      String monthStr = month.toString().padLeft(2, '0');
+      DocumentSnapshot oldDoc = await _firestore
+          .collection('users')
+          .doc(_uid)
+          .collection('monthly_logs')
+          .doc('$year-$monthStr')
+          .get();
+
+      if (oldDoc.exists && oldDoc.data() != null) {
+        Map<String, dynamic> oldData = oldDoc.data() as Map<String, dynamic>;
+
+        oldData.forEach((key, value) {
+          if (key == 'bonus_config') {
+            combinedYearlyData['bonus_config_$monthStr'] = value;
+          } else {
+            String fullDateKey = "$year-$monthStr-${key.padLeft(2, '0')}";
+            combinedYearlyData[fullDateKey] = value;
+          }
+        });
+      }
+    }
+
+    if (combinedYearlyData.isNotEmpty) {
+      await _getYearlyDocRef(year).set(combinedYearlyData);
+    }
   }
 }

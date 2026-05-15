@@ -39,40 +39,50 @@ class _YearStatisticsPageState extends State<YearStatisticsPage> {
     setState(() => isLoading = true);
 
     try {
-      final List<Map<String, dynamic>> allMonthsRaw = await Future.wait(
-        List.generate(
-          12,
-          (i) => _workService.getMonthlyData(_currentYear, i + 1),
-        ),
-      );
+      // 💡 12번씩 요청하지 않고, 1년 치 전체 데이터를 단 '1번'만 읽어옵니다. (비용/속도 최적화)
+      final rawYearlyData = await _workService.getYearlyData(_currentYear);
 
       Map<String, Map<String, dynamic>> tempYearlyData = {};
       Map<int, Map<String, dynamic>> tempCalculated = {};
       double tempTotalGongsu = 0;
       double tempTotalAmount = 0;
 
-      for (int i = 0; i < 12; i++) {
-        final month = i + 1;
-        final rawData = allMonthsRaw[i];
+      // 요약 계산을 위해 월별로 데이터를 분류할 빈 Map 생성
+      Map<int, Map<String, dynamic>> monthGrouped = {
+        for (int i = 1; i <= 12; i++) i: {},
+      };
 
-        final summary = _workService.calculateMonthSummaryFromMap(rawData);
+      // 한 번 불러온 1년 치 데이터를 순회하며 분류
+      rawYearlyData.forEach((key, value) {
+        if (key.startsWith('bonus_config_')) {
+          // 보너스 설정 분류 (예: bonus_config_05 -> 5월에 할당)
+          int month = int.parse(key.split('_').last);
+          monthGrouped[month]!['bonus_config'] = value;
+        } else {
+          // 일반 날짜 매핑 (예: 2026-05-15)
+          tempYearlyData[key] = value;
+
+          // 통계 계산 로직 호환을 위해 날짜(15)만 잘라서 매핑
+          int month = int.parse(key.split('-')[1]);
+          String dayKey = key.split('-')[2];
+          monthGrouped[month]![dayKey] = value;
+        }
+      });
+
+      // 각 월별 요약 계산 (기존 통계 함수 재활용)
+      for (int month = 1; month <= 12; month++) {
+        final summary = _workService.calculateMonthSummaryFromMap(
+          monthGrouped[month]!,
+        );
         tempCalculated[month] = summary;
-
         tempTotalGongsu += (summary['totalGongsu'] ?? 0).toDouble();
         tempTotalAmount += (summary['totalAmount'] ?? 0).toDouble();
-
-        rawData.forEach((dayKey, value) {
-          if (dayKey == 'bonus_config') return;
-          String fullDateKey =
-              "$_currentYear-${month.toString().padLeft(2, '0')}-${dayKey.padLeft(2, '0')}";
-          tempYearlyData[fullDateKey] = Map<String, dynamic>.from(value as Map);
-        });
       }
 
       if (mounted) {
         setState(() {
-          yearlyData = tempYearlyData;
-          monthlyCalculated = tempCalculated;
+          yearlyData = tempYearlyData; // 연간 달력 히트맵용 전체 데이터
+          monthlyCalculated = tempCalculated; // 각 월별 요약용 데이터
           totalYearGongsu = tempTotalGongsu;
           totalYearAmount = tempTotalAmount;
         });
