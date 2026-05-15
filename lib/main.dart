@@ -43,7 +43,7 @@ class GongsuApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '플랜트공수',
+      title: '공수투쟁',
       debugShowCheckedModeBanner: false,
 
       // ✅ 글자 크기 락(Lock) 방어 로직 추가

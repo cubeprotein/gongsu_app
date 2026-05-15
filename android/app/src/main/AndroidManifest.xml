@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:label="플랜트공수"
+        android:label="공수투쟁"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         
