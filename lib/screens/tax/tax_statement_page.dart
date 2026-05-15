@@ -115,7 +115,7 @@ class _TaxStatementPageState extends State<TaxStatementPage> {
   }
 
   Future<void> _fetchMonthlyWorkData() async {
-    final rawData = await _workService.getMonthlyData(
+    final rawData = await _workService.getMonthlyDataForUI(
       _currentMonth.year,
       _currentMonth.month,
     );
