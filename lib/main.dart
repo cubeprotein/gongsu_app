@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
+import 'package:google_mobile_ads/google_mobile_ads.dart'; // ✅ 애드몹 패키지 추가
 
 // ✅ 공휴일 매니저 임포트 (경로를 확인해 주세요)
 import 'holiday_manager.dart';
@@ -11,6 +12,9 @@ import 'screens/login/splash_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ✅ 애드몹 엔진 초기화 (추가)
+  await MobileAds.instance.initialize();
 
   // 1. 초기화
   await Firebase.initializeApp();
@@ -34,7 +38,7 @@ void main() async {
     ),
   );
 
-  runApp(const GongsuApp());
+  runApp(const GongsuApp()); // 기존 앱 실행 코드
 }
 
 class GongsuApp extends StatelessWidget {
