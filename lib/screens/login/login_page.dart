@@ -1,19 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart' as firebase_auth; // 추가
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import '../../services/auth_service.dart';
 import '../../services/profile_service.dart';
 import '../calendar/work_calendar_page.dart';
 import '../profile/my_page.dart';
-import 'login_welcome_screen.dart'; // 추가
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
 
-  // 파라미터에 firebase_auth.User 추가
   void _onLoginSuccess(
     BuildContext context,
     firebase_auth.User firebaseUser,
   ) async {
+    // 1. 로딩 표시
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -21,38 +20,38 @@ class LoginPage extends StatelessWidget {
     );
 
     try {
+      // 2. 서버 동기화 대기 (0.5초)
+      await Future.delayed(const Duration(milliseconds: 500));
+
       final userProfile = await ProfileService().loadProfile();
 
       if (!context.mounted) return;
       Navigator.pop(context); // 로딩창 닫기
 
-      final bool isNameEmpty =
-          userProfile.name.isEmpty || userProfile.name == "홍길동";
-      final bool isRoleEmpty = userProfile.role.isEmpty;
-      final bool isJobEmpty = userProfile.jobTitle.isEmpty;
+      // 3. 판정 조건: 이름만 있으면 통과
+      final bool isNameInvalid =
+          userProfile.name.trim().isEmpty || userProfile.name == "홍길동";
 
-      // 이동할 다음 화면 결정
       Widget nextPage;
-      if (isNameEmpty || isRoleEmpty || isJobEmpty) {
+      if (isNameInvalid) {
         nextPage = const MyPage();
       } else {
         nextPage = const WorkCalendarPage();
       }
 
-      // 바로 이동하지 않고 웰컴 화면으로 거쳐감
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) =>
-              LoginWelcomeScreen(user: firebaseUser, nextPage: nextPage),
-        ),
-      );
+      // 4. [수정] LoginWelcomeScreen 없이 바로 다음 페이지로 이동 (에러 해결)
+      if (context.mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => nextPage),
+        );
+      }
     } catch (e) {
       if (!context.mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('데이터 로드 실패: $e')));
+      ).showSnackBar(SnackBar(content: Text('프로필 정보를 가져오지 못했습니다: $e')));
     }
   }
 
@@ -82,8 +81,9 @@ class LoginPage extends StatelessWidget {
               textColor: Colors.black,
               onPressed: () async {
                 final user = await auth.signInWithKakao();
-                if (user != null && context.mounted)
+                if (user != null && context.mounted) {
                   _onLoginSuccess(context, user);
+                }
               },
             ),
             const SizedBox(height: 12),
@@ -93,8 +93,9 @@ class LoginPage extends StatelessWidget {
               textColor: Colors.white,
               onPressed: () async {
                 final user = await auth.signInWithGoogle();
-                if (user != null && context.mounted)
+                if (user != null && context.mounted) {
                   _onLoginSuccess(context, user);
+                }
               },
             ),
           ],

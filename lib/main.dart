@@ -13,14 +13,14 @@ import 'screens/login/splash_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ 애드몹 엔진 초기화 (추가)
-  await MobileAds.instance.initialize();
-
-  // 1. 초기화
+  // 1. 파이어베이스 및 카카오 SDK 최우선 초기화 (로그인 세션 복구 보장)
   await Firebase.initializeApp();
   kakao.KakaoSdk.init(nativeAppKey: '1af73a293a97369b17ea96ad9a6e17c6');
 
-  // 2. 공휴일 동기화 (앱 실행 시 딱 한 번만 수행)
+  // 2. 애드몹 엔진 비동기 초기화 (await 제거: 네이티브 지연으로 인한 파이어베이스 세션 복구 방해 차단)
+  MobileAds.instance.initialize();
+
+  // 3. 공휴일 동기화 (앱 실행 시 딱 한 번만 수행)
   await HolidayManager.syncHolidays();
 
   FirebaseFirestore.instance.settings = const Settings(

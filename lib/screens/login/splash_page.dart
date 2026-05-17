@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/profile_service.dart';
-import '../../services/work_service.dart'; // 추가됨
+import '../../services/work_service.dart';
 import '../calendar/work_calendar_page.dart';
 import '../profile/my_page.dart';
 import 'login_page.dart';
@@ -44,11 +44,39 @@ class _SplashPageState extends State<SplashPage> {
   void initState() {
     super.initState();
     selectedGreeting = greetings[Random().nextInt(greetings.length)];
+    _checkAuthAndNavigate();
+  }
 
-    Timer(const Duration(seconds: 2), () async {
+  Future<void> _checkAuthAndNavigate() async {
+    try {
+      // 1. 최소 2초 대기를 위해 타이머 시작
+      final stopwatch = Stopwatch()..start();
+
+      User? firebaseUser = FirebaseAuth.instance.currentUser;
+
+      if (firebaseUser == null) {
+        try {
+          // 릴리즈 모드 방어: 네이티브 저장소에서 세션을 읽어오는 지연 시간 대기
+          // null이 아닌 진짜 유저 객체가 들어올 때까지 최대 2초간 스트림을 기다림
+          firebaseUser = await FirebaseAuth.instance
+              .authStateChanges()
+              .firstWhere((user) => user != null)
+              .timeout(const Duration(milliseconds: 2000));
+        } catch (_) {
+          // 2초가 지나도 null이면 로그아웃 된 상태로 판정
+          firebaseUser = null;
+        }
+      }
+
+      // 2. 스플래시 화면 최소 노출 시간(2초) 보장
+      final elapsed = stopwatch.elapsedMilliseconds;
+      if (elapsed < 2000) {
+        await Future.delayed(Duration(milliseconds: 2000 - elapsed));
+      }
+
       if (!mounted) return;
-      final firebaseUser = FirebaseAuth.instance.currentUser;
 
+      // 3. 유저가 없으면 로그인 페이지로 이동
       if (firebaseUser == null) {
         Navigator.pushReplacement(
           context,
@@ -57,14 +85,19 @@ class _SplashPageState extends State<SplashPage> {
         return;
       }
 
-      // 올해 데이터 마이그레이션 실행 (완료 전까지 달력으로 안 넘어감)
-      final currentYear = DateTime.now().year;
-      await WorkService().migrateOldDataToYearlyStructure(currentYear);
+      // 4. 데이터 로드 및 마이그레이션
+      try {
+        final currentYear = DateTime.now().year;
+        await WorkService().migrateOldDataToYearlyStructure(currentYear);
+      } catch (e) {
+        debugPrint("Migration Error: $e");
+      }
 
       final profile = await ProfileService().loadProfile();
       if (!mounted) return;
 
-      if (profile.name == "홍길동" || profile.name.isEmpty) {
+      // 5. 프로필 상태에 따른 최종 페이지 이동
+      if (profile.name.trim().isEmpty || profile.name == "홍길동") {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const MyPage()),
@@ -75,7 +108,14 @@ class _SplashPageState extends State<SplashPage> {
           MaterialPageRoute(builder: (context) => const WorkCalendarPage()),
         );
       }
-    });
+    } catch (e) {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
+      }
+    }
   }
 
   @override
@@ -99,6 +139,7 @@ class _SplashPageState extends State<SplashPage> {
             const SizedBox(height: 40),
             Text(
               selectedGreeting,
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
