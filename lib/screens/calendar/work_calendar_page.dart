@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart'; // ✅ 애드몹 패키지 추가
 
 import '../../holiday_manager.dart';
 import '../../models/user_model.dart';
@@ -53,6 +54,11 @@ class _WorkCalendarPageState extends State<WorkCalendarPage> {
     _focusedDay = widget.initialDate ?? DateTime.now();
     _loadInitialData();
     _loadPremiumFlag();
+
+    // ✅ 캘린더 화면이 유저 눈에 완전히 렌더링된 '직후'에 애드몹 지연 초기화
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      MobileAds.instance.initialize();
+    });
   }
 
   Future<void> _loadPremiumFlag() async {
@@ -188,7 +194,6 @@ class _WorkCalendarPageState extends State<WorkCalendarPage> {
                         Expanded(
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            // 상하 스와이프 이벤트 흡수(차단)
                             onVerticalDragStart: (_) {},
                             onVerticalDragUpdate: (_) {},
                             onVerticalDragEnd: (_) {},
@@ -452,7 +457,7 @@ class _WorkCalendarPageState extends State<WorkCalendarPage> {
                   children: [
                     const SizedBox(height: 1),
                     if (isPaidLeave)
-                      _badge('유급', Color(0xFF8E44AD), 8.5)
+                      _badge('유급', const Color(0xFF8E44AD), 8.5)
                     else if (leave > 0)
                       _badge('휴무', const Color(0xFF2D6A4F), 8.5)
                     else if (workDay != 0)

@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "566776554664-mdlos6jtunaclsfl8uf94aqpfca6kg92.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gongsu.plant",
+            "certificate_hash": "e1bda955dac5ec0a644cfc2e117862e86acc863a"
+          }
+        },
+        {
           "client_id": "566776554664-pcfmhes0od57khm21bn90te27q5ffvun.apps.googleusercontent.com",
           "client_type": 3
         }

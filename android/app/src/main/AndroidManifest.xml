@@ -1,7 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/> <application
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/> 
+    
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:label="공수투쟁"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">

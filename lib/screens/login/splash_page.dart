@@ -48,55 +48,53 @@ class _SplashPageState extends State<SplashPage> {
   }
 
   Future<void> _checkAuthAndNavigate() async {
-    try {
-      // 1. 최소 2초 대기를 위해 타이머 시작
-      final stopwatch = Stopwatch()..start();
+    final stopwatch = Stopwatch()..start();
+    User? firebaseUser = FirebaseAuth.instance.currentUser;
 
-      User? firebaseUser = FirebaseAuth.instance.currentUser;
-
-      if (firebaseUser == null) {
-        try {
-          // 릴리즈 모드 방어: 네이티브 저장소에서 세션을 읽어오는 지연 시간 대기
-          // null이 아닌 진짜 유저 객체가 들어올 때까지 최대 2초간 스트림을 기다림
-          firebaseUser = await FirebaseAuth.instance
-              .authStateChanges()
-              .firstWhere((user) => user != null)
-              .timeout(const Duration(milliseconds: 2000));
-        } catch (_) {
-          // 2초가 지나도 null이면 로그아웃 된 상태로 판정
-          firebaseUser = null;
-        }
-      }
-
-      // 2. 스플래시 화면 최소 노출 시간(2초) 보장
-      final elapsed = stopwatch.elapsedMilliseconds;
-      if (elapsed < 2000) {
-        await Future.delayed(Duration(milliseconds: 2000 - elapsed));
-      }
-
-      if (!mounted) return;
-
-      // 3. 유저가 없으면 로그인 페이지로 이동
-      if (firebaseUser == null) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginPage()),
-        );
-        return;
-      }
-
-      // 4. 데이터 로드 및 마이그레이션
+    // 1. 핵심 팩트: 메모리에 캐시된 유저가 없다면, 진짜 토큰을 찾아낼 때까지 대기
+    if (firebaseUser == null) {
       try {
-        final currentYear = DateTime.now().year;
-        await WorkService().migrateOldDataToYearlyStructure(currentYear);
+        // null이 아닌 유저 값이 들어올 때까지 버팀 (최대 3초)
+        firebaseUser = await FirebaseAuth.instance
+            .authStateChanges()
+            .firstWhere((user) => user != null)
+            .timeout(const Duration(seconds: 10));
       } catch (e) {
-        debugPrint("Migration Error: $e");
+        // 3초가 지나도 타임아웃이 나면, 진짜로 로그아웃 한 유저로 확정
+        firebaseUser = null;
       }
+    }
 
+    // 2. 스플래시 화면 최소 노출 시간(2초) 보장 계산
+    final elapsed = stopwatch.elapsedMilliseconds;
+    if (elapsed < 2000) {
+      await Future.delayed(Duration(milliseconds: 2000 - elapsed));
+    }
+
+    if (!mounted) return;
+
+    // 인증 실패 시 로그인 페이지로 강제 이동
+    if (firebaseUser == null) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+      );
+      return;
+    }
+
+    // 데이터 마이그레이션 실행
+    try {
+      final currentYear = DateTime.now().year;
+      await WorkService().migrateOldDataToYearlyStructure(currentYear);
+    } catch (e) {
+      debugPrint("Migration Error: $e");
+    }
+
+    // 프로필 확인 및 캘린더 이동
+    try {
       final profile = await ProfileService().loadProfile();
       if (!mounted) return;
 
-      // 5. 프로필 상태에 따른 최종 페이지 이동
       if (profile.name.trim().isEmpty || profile.name == "홍길동") {
         Navigator.pushReplacement(
           context,
@@ -109,10 +107,11 @@ class _SplashPageState extends State<SplashPage> {
         );
       }
     } catch (e) {
+      debugPrint("Profile Load Error: $e");
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const LoginPage()),
+          MaterialPageRoute(builder: (context) => const WorkCalendarPage()),
         );
       }
     }
